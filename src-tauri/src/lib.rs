@@ -101,8 +101,8 @@ async fn folders(full_name: String) -> R<Vec<pj::Folder>> {
     blocking(move || pj::folders(&full_name)).await
 }
 #[tauri::command]
-async fn create_folder(full_name: String, name: String) -> R<pj::Folder> {
-    blocking(move || pj::create_folder(&full_name, &name)).await
+async fn create_folder(full_name: String, name: String, from: Option<PathBuf>) -> R<pj::Folder> {
+    blocking(move || pj::create_folder(&full_name, &name, from.as_deref())).await
 }
 #[tauri::command]
 async fn list_local(folder: PathBuf, rel: String) -> R<Vec<pj::LocalEntry>> {

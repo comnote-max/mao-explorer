@@ -27,7 +27,7 @@ select, input, textarea { padding: 5px 8px; border: 1px solid var(--line); borde
 
 .shell { display: grid; grid-template-columns: 240px 1fr; height: 100vh; }
 .tree { background: var(--bg2); border-right: 1px solid var(--line); padding: 8px 0; display: flex; flex-direction: column; overflow: auto; }
-.tree-item { padding: 5px 14px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-item { flex-shrink: 0; line-height: 1.35; padding: 4px 14px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-item:hover { background: var(--sel); }
 .tree-item.active { background: var(--sel); font-weight: 600; }
 .tree-item.child { padding-left: 30px; }
@@ -130,3 +130,6 @@ input.rename { padding: 1px 4px; flex: 1; }
 .menu > div:hover { background: var(--sel); }
 .menu > div.disabled { opacity: .4; pointer-events: none; }
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.twisty { display: inline-block; width: 14px; color: var(--muted); font-size: 11px; }
+.tree-foot { flex-shrink: 0; position: sticky; bottom: 0; background: var(--bg2); }
+.copytag { display: inline-block; padding: 0 7px; border-radius: 999px; background: #ffd43b; color: #5c3c00; border: 1px solid #e0a800; font: 600 11px/16px ui-monospace, Consolas, monospace; vertical-align: 1px; }

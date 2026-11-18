@@ -4,7 +4,9 @@ import { ACCESS_LABEL, T } from "../terms";
 import RemoteView from "./RemoteView";
 import LocalView from "./LocalView";
 
-export default function ProjectScreen({ project, onChanged }: { project: Project; onChanged: (p: Project) => void }) {
+export default function ProjectScreen({ project, onChanged, path, onPathChange }: {
+  project: Project; onChanged: (p: Project) => void; path?: string; onPathChange?: (p: string) => void;
+}) {
   const [cap, setCap] = useState<Capability | null>(null);
   const [capError, setCapError] = useState<string | null>(null);
 
@@ -28,7 +30,7 @@ export default function ProjectScreen({ project, onChanged }: { project: Project
         <span className="muted grow">{project.description}</span>
       </header>
       {project.synced ? (
-        <LocalView project={project} cap={cap} />
+        <LocalView project={project} cap={cap} path={path} onPathChange={onPathChange} />
       ) : (
         <RemoteView project={project} onSynced={() => api.projectInfo(project.full_name).then(onChanged)} />
       )}

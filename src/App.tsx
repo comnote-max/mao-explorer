@@ -4,12 +4,13 @@ import Login from "./screens/Login";
 import ProjectList from "./screens/ProjectList";
 import ProjectScreen from "./screens/ProjectScreen";
 import FileBrowser from "./screens/FileBrowser";
+import { ProjectNode, TreeNode } from "./screens/FolderTree";
 import { api, fsApi, Place, Project } from "./api";
 import { T } from "./terms";
 
 export type Account = { login: string; name: string | null; avatar_url: string };
 
-type Loc = { kind: "fs"; path: string } | { kind: "github" } | { kind: "project"; project: Project };
+type Loc = { kind: "fs"; path: string } | { kind: "github" } | { kind: "project"; project: Project; path?: string };
 
 export default function App() {
   const [account, setAccount] = useState<Account | null | undefined>(undefined);
@@ -48,9 +49,8 @@ export default function App() {
       <aside className="tree">
         <div className="tree-item" onClick={() => setOpen({ ...open, pc: !open.pc })}>{open.pc ? "▾" : "▸"} 💻 PC</div>
         {open.pc && places.map((pl) => (
-          <div key={pl.path} className={"tree-item child" + (isFs(pl.path) ? " active" : "")} onClick={() => setLoc({ kind: "fs", path: pl.path })} title={pl.path}>
-            {pl.kind === "drive" ? "💽" : "⭐"} {pl.name}
-          </div>
+          <TreeNode key={pl.path} path={pl.path} label={pl.name} icon={pl.kind === "drive" ? "💽" : "⭐"} depth={1}
+            current={loc?.kind === "fs" ? loc.path : null} onSelect={(path) => setLoc({ kind: "fs", path })} />
         ))}
         <div className="tree-item disabled" title="次の段階で実装（OSで接続済みの共有はドライブとして表示されます）">🗄 NAS</div>
         <div className="tree-item disabled" title="次の段階で実装">☁ OneDrive</div>
@@ -59,11 +59,9 @@ export default function App() {
           <span onClick={(e) => { e.stopPropagation(); setOpen({ ...open, github: !open.github }); }}>{open.github ? "▾" : "▸"}</span> 🐙 GitHub
         </div>
         {open.github && account && projects?.map((p) => (
-          <div key={p.full_name}
-            className={"tree-item child" + (isProject(p.full_name) ? " active" : "") + (p.synced ? "" : " unsynced")}
-            onClick={() => setLoc({ kind: "project", project: p })} title={p.full_name}>
-            📁 {p.name} {p.private && <span className="lock">🔒</span>}
-          </div>
+          <ProjectNode key={p.full_name} project={p} active={isProject(p.full_name)}
+            current={loc?.kind === "project" && loc.project.full_name === p.full_name ? loc.path ?? null : null}
+            onSelect={(path) => setLoc({ kind: "project", project: p, path })} />
         ))}
         <div className="tree-foot">
           {account ? (
@@ -81,7 +79,8 @@ export default function App() {
           ? <Login onDone={refresh} initialError={error} />
           : <ProjectList projects={projects} error={listError} onOpen={(project) => setLoc({ kind: "project", project })} onReload={loadProjects} />)}
         {loc?.kind === "project" && (
-          <ProjectScreen key={loc.project.full_name} project={loc.project}
+          <ProjectScreen key={loc.project.full_name} project={loc.project} path={loc.path}
+            onPathChange={(path) => setLoc((l) => (l?.kind === "project" ? { ...l, path } : l))}
             onChanged={(p) => { setLoc({ kind: "project", project: p }); setProjects((l) => l?.map((x) => (x.full_name === p.full_name ? p : x)) ?? null); }} />
         )}
         {!loc && <main className="center muted">読み込み中…</main>}

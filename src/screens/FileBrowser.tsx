@@ -1,3 +1,4 @@
+import type React from "react";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { baseName, Change, Entry, fmtSize, fmtTime, fsApi, join, parentOf, sep } from "../api";
@@ -13,7 +14,7 @@ type Props = {
   /** これより上には移動しない（プロジェクトのフォルダなど） */
   rootLimit?: string;
   /** アドレスバーの先頭に出す表示名（例：本体） */
-  rootLabel?: string;
+  rootLabel?: React.ReactNode;
   /** Git の変更（root からの相対パス、/ 区切り） */
   gitRoot?: string;
   gitChanges?: Change[];
@@ -208,7 +209,7 @@ export default function FileBrowser(p: Props) {
     const base = p.rootLimit ?? "";
     const restPath = base ? path.slice(base.length) : path;
     const parts = restPath.split(sep).filter(Boolean);
-    const out: { label: string; to: string }[] = [];
+    const out: { label: React.ReactNode; to: string }[] = [];
     let acc = base;
     if (base) out.push({ label: p.rootLabel ?? baseName(base), to: base });
     for (const part of parts) {

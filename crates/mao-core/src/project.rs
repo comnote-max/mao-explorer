@@ -213,7 +213,8 @@ fn state(repo: &Repository, branch: &str, main: &str) -> Result<FolderState> {
     Ok(s)
 }
 
-pub fn create_folder(full_name: &str, display: &str) -> Result<Folder> {
+/// `from` を指定すると、そのコピーの保存済みの内容から作る（未指定なら本体の最新から）。
+pub fn create_folder(full_name: &str, display: &str, from: Option<&Path>) -> Result<Folder> {
     let (lp, repo) = main_repo(full_name)?;
     let display = safe_file_name(display.trim());
     if display.is_empty() || display == MAIN_DIR {
@@ -225,9 +226,12 @@ pub fn create_folder(full_name: &str, display: &str) -> Result<Folder> {
     }
     let token = crate::github::token()?;
     fetch(&repo, &token).ok();
-    let base = repo
+    let base = match from {
+        Some(f) => Repository::open(f)?.head()?.peel_to_commit()?.id(),
+        None => repo
         .refname_to_id(&format!("refs/remotes/origin/{}", lp.default_branch))
-        .or_else(|_| repo.head().and_then(|h| h.peel_to_commit().map(|c| c.id())))?;
+        .or_else(|_| repo.head().and_then(|h| h.peel_to_commit().map(|c| c.id())))?,
+    };
     let branch = format!("{BRANCH_PREFIX}{}", safe_branch(&display));
     let commit = repo.find_commit(base)?;
     let br = repo.branch(&branch, &commit, false)?;

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, Capability, Change, Folder, MergeView, Project, Request } from "../api";
 import { CHANGE_LABEL, T } from "../terms";
+import { copyNumbers, copyText, CopyTag } from "../copyNo";
 import FileBrowser from "./FileBrowser";
 import RequestsPanel from "./RequestsPanel";
+import { isUnder } from "./FolderTree";
 
 type Dialog = null | "save" | "newFolder" | "request" | "requests";
 
@@ -12,7 +14,9 @@ const loadSeen = (fn: string): number[] => {
 };
 
 /** 同期済みプロジェクト：通常のファイル一覧に、GitHub の操作グループを足したもの。 */
-export default function LocalView({ project, cap }: { project: Project; cap: Capability | null }) {
+export default function LocalView({ project, cap, path, onPathChange }: {
+  project: Project; cap: Capability | null; path?: string; onPathChange?: (p: string) => void;
+}) {
   const [folders, setFolders] = useState<Folder[] | null>(null);
   const [current, setCurrent] = useState<string>("");
   const [changes, setChanges] = useState<Change[]>([]);
@@ -23,7 +27,15 @@ export default function LocalView({ project, cap }: { project: Project; cap: Cap
   const [mergeAfterSave, setMergeAfterSave] = useState(false);
   const [seen, setSeen] = useState<number[]>(() => loadSeen(project.full_name));
 
+  // ツリーで選ばれた場所から、どの（仮想）フォルダかを決める
+  useEffect(() => {
+    const f = path && folders?.find((x) => isUnder(path, x.path));
+    if (f && f.path !== current) setCurrent(f.path);
+  }, [path, folders]);
   const folder = folders?.find((f) => f.path === current) ?? folders?.[0];
+  const nums = copyNumbers(project.full_name, (folders ?? []).filter((x) => !x.is_main).map((x) => x.name));
+  const tagOf = (f: Folder) => f.is_main ? <>🏠 {T.mainBranch}</> : <><CopyTag n={nums[f.name]} /> {f.name}</>;
+  const pick = (p: string) => { setCurrent(p); onPathChange?.(p); };
 
   const loadFolders = useCallback(async () => {
     const fs = await api.folders(project.full_name);
@@ -117,10 +129,10 @@ export default function LocalView({ project, cap }: { project: Project; cap: Cap
 
   const gitTools = (
     <div className="gitgroup">
-      <select value={folder?.path ?? ""} onChange={(e) => setCurrent(e.target.value)} title={`表示中：${T.mainBranch}／${T.branch}`}>
-        {folders?.map((f) => <option key={f.path} value={f.path}>{f.is_main ? `🏠 ${T.mainBranch}` : `🗂 ${f.name}`}</option>)}
-      </select>
-      <button onClick={() => setDialog("newFolder")} disabled={!!busy} title={T.createBranch}>＋ {T.branch}</button>
+      <button onClick={() => setDialog("newFolder")} disabled={!!busy}
+        title={folder?.is_main ? "本体の最新の内容をコピーして、作業用のフォルダを作ります" : "このコピーの保存済みの内容から、新しいコピーを作ります"}>
+        ＋ {folder?.is_main ? T.createBranch : <><CopyTag n={nums[folder!.name]} /> をコピー</>}
+      </button>
       <button onClick={doSync} disabled={!!busy}>⇅ {T.sync}</button>
       <button onClick={() => setDialog("save")} disabled={!!busy || !nChanges} className={nChanges ? "primary" : ""}>
         💾 {T.commit}{nChanges ? `（${nChanges}）` : ""}
@@ -145,14 +157,14 @@ export default function LocalView({ project, cap }: { project: Project; cap: Cap
   return (
     <>
       {message && <div className={`banner ${message.kind}`}>{message.text}<button className="small" onClick={() => setMessage(null)}>×</button></div>}
-      <FileBrowser key={folder.path} path={folder.path} rootLimit={folder.path}
-        rootLabel={folder.is_main ? `🏠 ${T.mainBranch}` : `🗂 ${folder.name}`}
+      <FileBrowser key={folder.path} path={path && isUnder(path, folder.path) ? path : folder.path} onPathChange={onPathChange} rootLimit={folder.path}
+        rootLabel={tagOf(folder)}
         gitRoot={folder.path} gitChanges={changes} extraTools={gitTools}
         extraStatus={<>{statusText}{mergeText && `　｜　${mergeText}`}</>}
         onMutate={loadChanges} />
 
       {dialog === "save" && (
-        <SaveDialog changes={changes} onClose={() => { setDialog(null); setMergeAfterSave(false); }}
+        <SaveDialog changes={changes} merge={mergeAfterSave} onClose={() => { setDialog(null); setMergeAfterSave(false); }}
           onSave={async (msg, files) => {
             setDialog(null);
             const thenMerge = mergeAfterSave;
@@ -168,10 +180,12 @@ export default function LocalView({ project, cap }: { project: Project; cap: Cap
           }} />
       )}
       {dialog === "newFolder" && (
-        <PromptDialog title={T.createBranch} label="名前（例：見積書の修正）" ok="作成"
-          note={`${T.mainBranch}の最新の内容をコピーした、作業用のフォルダを作ります。${T.mainBranch}には影響しません。`}
+        <PromptDialog title={folder.is_main ? T.createBranch : `${copyText(nums[folder.name])} をコピー`} label="名前（例：見積書の修正）" ok="作成"
+          note={folder.is_main
+            ? `${T.mainBranch}の最新の内容をコピーした、作業用のフォルダを作ります。${T.mainBranch}には影響しません。`
+            : `${copyText(nums[folder.name])} の保存済みの内容から、新しいコピーを作ります。${nChanges > 0 ? `未保存の変更 ${nChanges} 件はコピーされません。必要なら先に保存してください。` : ""}元のフォルダと${T.mainBranch}には影響しません。`}
           onClose={() => setDialog(null)}
-          onOk={(name) => { setDialog(null); return run(T.createBranch, async () => { const f = await api.createFolder(project.full_name, name); await loadFolders(); setCurrent(f.path); }); }} />
+          onOk={(name) => { setDialog(null); return run(T.createBranch, async () => { const f = await api.createFolder(project.full_name, name, folder.is_main ? undefined : folder.path); await loadFolders(); pick(f.path); }); }} />
       )}
       {dialog === "request" && (
         <PromptDialog title={T.pullRequest} label="責任者へのメッセージ" ok="依頼を送信" multiline
@@ -188,14 +202,15 @@ export default function LocalView({ project, cap }: { project: Project; cap: Cap
   );
 }
 
-function SaveDialog({ changes, onClose, onSave }: { changes: Change[]; onClose: () => void; onSave: (msg: string, files: string[]) => void }) {
+function SaveDialog({ changes, merge, onClose, onSave }: { changes: Change[]; merge?: boolean; onClose: () => void; onSave: (msg: string, files: string[]) => void }) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set(changes.map((x) => x.path)));
   const [msg, setMsg] = useState("");
   const all = checked.size === changes.length;
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{T.commit}（変更を履歴に記録）</h3>
+        <h3>{merge ? `${T.commit}して${T.merge}` : `${T.commit}（変更を履歴に記録）`}</h3>
+        {merge && <p className="muted">保存すると、そのまま{T.mainBranch}に反映します（GitHub上で依頼の作成と反映を自動で行います）。</p>}
         <div className="changes">
           {changes.map((c) => (
             <label key={c.path}>
@@ -206,10 +221,10 @@ function SaveDialog({ changes, onClose, onSave }: { changes: Change[]; onClose: 
           ))}
           {changes.length === 0 && <p className="muted">変更はありません</p>}
         </div>
-        <label className="field">メッセージ（何を変えたか）<input autoFocus value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="例：見積金額を修正" /></label>
+        <label className="field">メッセージ（任意・空なら日時を記録）<input autoFocus value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="例：見積金額を修正" /></label>
         <div className="actions">
           <button onClick={onClose}>キャンセル</button>
-          <button className="primary" disabled={!msg.trim() || checked.size === 0} onClick={() => onSave(msg, all ? [] : [...checked])}>{T.commit}</button>
+          <button className="primary" disabled={checked.size === 0} onClick={() => onSave(msg.trim() || `${new Date().toLocaleString("ja-JP")} の${T.commit}`, all ? [] : [...checked])}>{merge ? `${T.commit}して${T.merge}` : T.commit}</button>
         </div>
       </div>
     </div>

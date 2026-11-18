@@ -2,8 +2,8 @@
 export const T = {
   repository: "プロジェクトフォルダ",
   mainBranch: "本体",
-  branch: "仮想フォルダ",
-  createBranch: "仮想フォルダを作成",
+  branch: "コピー",
+  createBranch: "本体をコピー",
   commit: "保存",
   clone: "初回同期",
   sync: "同期",
@@ -30,3 +30,4 @@ export const ACCESS_LABEL = { read: "閲覧のみ", write: "作業・依頼可",
 export const CHANGE_LABEL: Record<string, string> = {
   added: "追加", modified: "変更", deleted: "削除", renamed: "名前変更", conflicted: "要対応",
 };
+

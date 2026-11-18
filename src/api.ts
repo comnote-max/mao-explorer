@@ -65,7 +65,7 @@ export const api = {
   firstSync: (fullName: string, defaultBranch: string, root: string) =>
     invoke<string>("first_sync", { fullName, defaultBranch, root }),
   folders: (fullName: string) => invoke<Folder[]>("folders", { fullName }),
-  createFolder: (fullName: string, name: string) => invoke<Folder>("create_folder", { fullName, name }),
+  createFolder: (fullName: string, name: string, from?: string) => invoke<Folder>("create_folder", { fullName, name, from: from ?? null }),
   listLocal: (folder: string, rel: string) => invoke<LocalEntry[]>("list_local", { folder, rel }),
   changes: (folder: string) => invoke<Change[]>("changes", { folder }),
   save: (folder: string, message: string, files: string[]) => invoke<string>("save", { folder, message, files }),
