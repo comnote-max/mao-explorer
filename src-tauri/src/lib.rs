@@ -271,7 +271,7 @@ async fn fs_move(paths: Vec<PathBuf>, dest: PathBuf) -> R<Vec<PathBuf>> {
     fsb(move || mfs::move_to(&paths, &dest)).await
 }
 #[tauri::command]
-async fn fs_read_text, file_diff(path: PathBuf) -> R<Option<String>> {
+async fn fs_read_text(path: PathBuf) -> R<Option<String>> {
     fsb(move || mfs::read_text(&path, 2 * 1024 * 1024)).await
 }
 /// OS標準のアプリで開く。
@@ -296,7 +296,7 @@ pub fn run() {
             set_private,
             remove_folder, list_local, changes, save, sync,
             requests, request_files, send_request, merge_folder, merge_request, request_changes,
-            fs_places, fs_list, fs_new_folder, fs_new_file, fs_rename, fs_delete, fs_copy, fs_move, fs_open, fs_reveal, fs_read_text
+            fs_places, fs_list, fs_new_folder, fs_new_file, fs_rename, fs_delete, fs_copy, fs_move, fs_open, fs_reveal, fs_read_text, file_diff
         ])
         .run(tauri::generate_context!())
         .expect("error while running MAO Explorer");
