@@ -109,6 +109,12 @@ pub async fn list_projects() -> Result<Vec<Project>> {
     Ok(out)
 }
 
+/// 公開／非公開を切り替える（管理者のみ）。
+pub async fn set_private(full_name: &str, private: bool) -> Result<Project> {
+    let v = send(client().patch(url(&format!("/repos/{full_name}"))).json(&json!({ "private": private }))).await?;
+    Ok(to_project(&v))
+}
+
 pub async fn project(full_name: &str) -> Result<Project> {
     Ok(to_project(&get(&format!("/repos/{full_name}")).await?))
 }

@@ -131,7 +131,7 @@ export default function LocalView({ project, cap, path, onPathChange }: {
     <div className="gitgroup">
       <button onClick={() => setDialog("newFolder")} disabled={!!busy}
         title={folder?.is_main ? "本体の最新の内容をコピーして、作業用のフォルダを作ります" : "このコピーの保存済みの内容から、新しいコピーを作ります"}>
-        ＋ {folder?.is_main ? T.createBranch : <><CopyTag n={nums[folder!.name]} /> をコピー</>}
+        ＋ {!folder || folder.is_main ? T.createBranch : <><CopyTag n={nums[folder.name]} /> をコピー</>}
       </button>
       <button onClick={doSync} disabled={!!busy}>⇅ {T.sync}</button>
       <button onClick={() => setDialog("save")} disabled={!!busy || !nChanges} className={nChanges ? "primary" : ""}>

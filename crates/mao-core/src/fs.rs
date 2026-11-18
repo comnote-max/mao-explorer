@@ -77,6 +77,19 @@ fn is_hidden(name: &str, md: &std::fs::Metadata) -> bool {
     name.starts_with('.')
 }
 
+/// プレビュー用にテキストを読む。大きすぎる・文字でないファイルは None。
+pub fn read_text(path: &Path, max: u64) -> Result<Option<String>> {
+    let meta = std::fs::metadata(path)?;
+    if !meta.is_file() || meta.len() > max {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(path)?;
+    if bytes.iter().take(8000).any(|&b| b == 0) {
+        return Ok(None);
+    }
+    Ok(String::from_utf8(bytes).ok())
+}
+
 pub fn list(dir: &Path, show_hidden: bool) -> Result<Vec<Entry>> {
     let mut out = vec![];
     for e in std::fs::read_dir(dir)? {

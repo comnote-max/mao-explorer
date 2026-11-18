@@ -244,7 +244,68 @@ pub fn create_folder(full_name: &str, display: &str, from: Option<&Path>) -> Res
         .ok_or_else(|| ProjError::User("仮想フォルダの作成後に見つかりません".into()))
 }
 
+/// コピー（仮想フォルダ）を片付ける。フォルダはごみ箱へ移すので、ファイルは元に戻せる。
+/// `remote` が true なら GitHub 上の作業場所も消す（本体に反映済みのときに使う）。
+pub fn remove_folder(full_name: &str, folder: &Path, remote: bool) -> Result<()> {
+    let (lp, repo) = main_repo(full_name)?;
+    if folder == lp.root.join(MAIN_DIR) {
+        return user("本体は削除できません");
+    }
+    let branch = branch_of(folder)?;
+    let display = folder.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+    trash::delete(folder).map_err(|e| ProjError::User(format!("フォルダをごみ箱へ移せませんでした：{e}")))?;
+    // Git 側の登録を外す（フォルダはもう無いので prune で消える）
+    for id in [wt_id(&display), display.clone()] {
+        if let Ok(wt) = repo.find_worktree(&id) {
+            let _ = wt.prune(Some(git2::WorktreePruneOptions::new().valid(true).working_tree(false)));
+        }
+    }
+    if let Ok(names) = repo.worktrees() {
+        for id in names.iter().flatten() {
+            if let Ok(wt) = repo.find_worktree(id) {
+                if wt.path() == folder { let _ = wt.prune(Some(git2::WorktreePruneOptions::new().valid(true))); }
+            }
+        }
+    }
+    if let Ok(mut b) = repo.find_branch(&branch, BranchType::Local) {
+        let _ = b.delete();
+    }
+    if remote && branch.starts_with(BRANCH_PREFIX) {
+        let token = crate::github::token()?;
+        let mut r = repo.find_remote("origin")?;
+        let mut po = PushOptions::new();
+        po.remote_callbacks(callbacks(&token));
+        let _ = r.push(&[format!(":refs/heads/{branch}").as_str()], Some(&mut po));
+        let _ = fetch(&repo, &token);
+        if let Ok(mut rb) = repo.find_branch(&format!("origin/{branch}"), BranchType::Remote) { let _ = rb.delete(); }
+    }
+    Ok(())
+}
+
 // ---------- 変更と保存 ----------
+
+/// 1ファイルの「最後の保存」からの変更点（unified diff）。大きすぎる・文字でない場合は None。
+pub fn file_diff(folder: &Path, rel: &str) -> Result<Option<String>> {
+    let repo = Repository::open(folder)?;
+    let head = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+    let mut opts = git2::DiffOptions::new();
+    opts.pathspec(rel).disable_pathspec_match(true).include_untracked(true)
+        .recurse_untracked_dirs(true).show_untracked_content(true).context_lines(3);
+    let diff = repo.diff_tree_to_workdir_with_index(head.as_ref(), Some(&mut opts))?;
+    let mut out = String::new();
+    let mut binary = false;
+    diff.print(git2::DiffFormat::Patch, |delta, _, line| {
+        if delta.flags().is_binary() { binary = true; return true; }
+        match line.origin() {
+            '+' | '-' | ' ' => out.push(line.origin()),
+            _ => {}
+        }
+        out.push_str(&String::from_utf8_lossy(line.content()));
+        out.len() < 2_000_000
+    })?;
+    if binary { return Ok(None); }
+    Ok(Some(out))
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Change {

@@ -69,6 +69,10 @@ async fn project_info(full_name: String) -> R<ProjectView> {
     Ok(view(gh::project(&full_name).await.map_err(s)?))
 }
 #[tauri::command]
+async fn set_private(full_name: String, private: bool) -> R<ProjectView> {
+    Ok(view(gh::set_private(&full_name, private).await.map_err(s)?))
+}
+#[tauri::command]
 async fn capability(full_name: String) -> R<gh::Capability> {
     let p = gh::project(&full_name).await.map_err(s)?;
     gh::capability(&p).await.map_err(s)
@@ -105,8 +109,16 @@ async fn create_folder(full_name: String, name: String, from: Option<PathBuf>) -
     blocking(move || pj::create_folder(&full_name, &name, from.as_deref())).await
 }
 #[tauri::command]
+async fn remove_folder(full_name: String, folder: PathBuf, remote: bool) -> R<()> {
+    blocking(move || pj::remove_folder(&full_name, &folder, remote)).await
+}
+#[tauri::command]
 async fn list_local(folder: PathBuf, rel: String) -> R<Vec<pj::LocalEntry>> {
     blocking(move || pj::list_dir(&folder, &rel)).await
+}
+#[tauri::command]
+async fn file_diff(folder: PathBuf, rel: String) -> R<Option<String>> {
+    blocking(move || pj::file_diff(&folder, &rel)).await
 }
 #[tauri::command]
 async fn changes(folder: PathBuf) -> R<Vec<pj::Change>> {
@@ -258,6 +270,10 @@ async fn fs_copy(paths: Vec<PathBuf>, dest: PathBuf) -> R<Vec<PathBuf>> {
 async fn fs_move(paths: Vec<PathBuf>, dest: PathBuf) -> R<Vec<PathBuf>> {
     fsb(move || mfs::move_to(&paths, &dest)).await
 }
+#[tauri::command]
+async fn fs_read_text, file_diff(path: PathBuf) -> R<Option<String>> {
+    fsb(move || mfs::read_text(&path, 2 * 1024 * 1024)).await
+}
 /// OS標準のアプリで開く。
 #[tauri::command]
 fn fs_open(path: PathBuf) -> R<()> {
@@ -276,9 +292,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             auth_account, login_start, login_poll, logout,
             projects, project_info, capability, browse_remote, read_remote, readme, default_root, first_sync,
-            folders, create_folder, list_local, changes, save, sync,
+            folders, create_folder,
+            set_private,
+            remove_folder, list_local, changes, save, sync,
             requests, request_files, send_request, merge_folder, merge_request, request_changes,
-            fs_places, fs_list, fs_new_folder, fs_new_file, fs_rename, fs_delete, fs_copy, fs_move, fs_open, fs_reveal
+            fs_places, fs_list, fs_new_folder, fs_new_file, fs_rename, fs_delete, fs_copy, fs_move, fs_open, fs_reveal, fs_read_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running MAO Explorer");

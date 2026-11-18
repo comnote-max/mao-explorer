@@ -1,8 +1,10 @@
 import type React from "react";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { baseName, Change, Entry, fmtSize, fmtTime, fsApi, join, parentOf, sep } from "../api";
 import { CHANGE_LABEL } from "../terms";
+import Preview from "./Preview";
 
 // アプリ全体で共有するクリップボード
 let clipboard: { mode: "copy" | "cut"; paths: string[] } | null = null;
@@ -28,6 +30,8 @@ type Props = {
 
 type Menu = { x: number; y: number; target: Entry | null };
 
+type View = "details" | "medium" | "large";
+
 export default function FileBrowser(p: Props) {
   const [path, setPath] = useState(p.path);
   const [back, setBack] = useState<string[]>([]);
@@ -44,6 +48,10 @@ export default function FileBrowser(p: Props) {
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState<{ key: "name" | "modified" | "size"; asc: boolean }>({ key: "name", asc: true });
   const [, force] = useState(0);
+  const [view, setView] = useState<View>(() => (localStorage.getItem("mao.view") as View) || "details");
+  const [preview, setPreview] = useState(() => localStorage.getItem("mao.preview") === "1");
+  const togglePreview = () => setPreview((v) => { try { localStorage.setItem("mao.preview", v ? "0" : "1"); } catch { /* 任意 */ } return !v; });
+  const changeView = (v: View) => { setView(v); try { localStorage.setItem("mao.view", v); } catch { /* 任意 */ } };
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { if (p.path !== path) go(p.path, false); }, [p.path]);
@@ -180,7 +188,8 @@ export default function FileBrowser(p: Props) {
   const key = (ev: React.KeyboardEvent) => {
     if (renaming || (ev.target as HTMLElement).tagName === "INPUT") return;
     const k = ev.key.toLowerCase(), mod = ev.ctrlKey || ev.metaKey;
-    if (mod && k === "a") { ev.preventDefault(); setSel(new Set(shown.map((e) => e.path))); }
+    if (ev.altKey && k === "p") { ev.preventDefault(); togglePreview(); }
+    else if (mod && k === "a") { ev.preventDefault(); setSel(new Set(shown.map((e) => e.path))); }
     else if (mod && k === "c") doCopy("copy");
     else if (mod && k === "x") doCopy("cut");
     else if (mod && k === "v") doPaste();
@@ -218,6 +227,19 @@ export default function FileBrowser(p: Props) {
     }
     return out;
   })();
+
+  const itemProps = (e: Entry, m: string | null | undefined) => {
+    const cut = clipboard?.mode === "cut" && clipboard.paths.includes(e.path);
+    return {
+      className: (sel.has(e.path) ? "selected " : "") + (m === "deleted" ? "deleted " : "") + (cut || e.hidden ? "dim" : ""),
+      onClick: (ev: React.MouseEvent) => { ev.stopPropagation(); click(ev, e); },
+      onDoubleClick: () => open(e),
+      onContextMenu: (ev: React.MouseEvent) => { ev.preventDefault(); ev.stopPropagation(); if (!sel.has(e.path)) setSel(new Set([e.path])); setMenu({ x: ev.clientX, y: ev.clientY, target: e }); },
+    };
+  };
+  const nameOf = (e: Entry) => renaming === e.path
+    ? <RenameInput initial={e.name} onDone={(n) => commitRename(e, n)} />
+    : <span>{e.name}</span>;
 
   const sortBy = (k: "name" | "modified" | "size") => setSort((s) => ({ key: k, asc: s.key === k ? !s.asc : true }));
   const arrow = (k: string) => (sort.key === k ? (sort.asc ? " ▲" : " ▼") : "");
@@ -265,13 +287,22 @@ export default function FileBrowser(p: Props) {
         <label className="check"><input type="checkbox" checked={showHidden}
           onChange={(e) => { setShowHidden(e.target.checked); localStorage.setItem("mao.hidden", e.target.checked ? "1" : "0"); }} /> 隠しファイル</label>
         {p.extraTools && <><span className="sep" />{p.extraTools}</>}
+        <span className="grow" />
+        <button className={"icon" + (preview ? " on" : "")} title="プレビュー ウィンドウ（Alt+P）" onClick={togglePreview}>👁 プレビュー</button>
+        <div className="viewsw" title="表示方法">
+          <button className={"icon" + (view === "details" ? " on" : "")} title="詳細" onClick={() => changeView("details")}>☰</button>
+          <button className={"icon" + (view === "medium" ? " on" : "")} title="中アイコン" onClick={() => changeView("medium")}>▦</button>
+          <button className={"icon" + (view === "large" ? " on" : "")} title="大アイコン" onClick={() => changeView("large")}>⬜</button>
+        </div>
       </div>
 
       {error && <div className="banner error">{error}<button className="small" onClick={() => setError(null)}>×</button></div>}
 
+      <div className="body-row">
       <div className="files-scroll" ref={listRef} tabIndex={0}
         onClick={(e) => { if (e.target === e.currentTarget) setSel(new Set()); }}
         onContextMenu={(e) => { e.preventDefault(); if (e.target === e.currentTarget) { setSel(new Set()); setMenu({ x: e.clientX, y: e.clientY, target: null }); } }}>
+        {view === "details" ? (
         <table className="list">
           <thead>
             <tr>
@@ -284,20 +315,11 @@ export default function FileBrowser(p: Props) {
           <tbody>
             {shown.map((e) => {
               const m = markOf(e);
-              const cut = clipboard?.mode === "cut" && clipboard.paths.includes(e.path);
               return (
-                <tr key={e.path}
-                  className={(sel.has(e.path) ? "selected " : "") + (m === "deleted" ? "deleted " : "") + (cut || e.hidden ? "dim" : "")}
-                  onClick={(ev) => { ev.stopPropagation(); click(ev, e); }}
-                  onDoubleClick={() => open(e)}
-                  onContextMenu={(ev) => { ev.preventDefault(); ev.stopPropagation(); if (!sel.has(e.path)) setSel(new Set([e.path])); setMenu({ x: ev.clientX, y: ev.clientY, target: e }); }}>
+                <tr key={e.path} {...itemProps(e, m)}>
                   <td className="name">
                     <span className="ficon">{e.is_dir ? "📁" : icon(e.name)}</span>
-                    {renaming === e.path ? (
-                      <RenameInput initial={e.name} onDone={(n) => commitRename(e, n)} />
-                    ) : (
-                      <span>{e.name}</span>
-                    )}
+                    {nameOf(e)}
                   </td>
                   <td className="muted">{fmtTime(e.modified)}</td>
                   <td className="muted num">{e.is_dir ? "" : fmtSize(e.size)}</td>
@@ -307,8 +329,26 @@ export default function FileBrowser(p: Props) {
             })}
           </tbody>
         </table>
+        ) : (
+          <div className={`tiles ${view}`}>
+            {shown.map((e) => {
+              const m = markOf(e);
+              return (
+                <div key={e.path} {...itemProps(e, m)} className={"tile " + itemProps(e, m).className} title={e.name}>
+                  <div className="tile-icon">{e.is_dir ? "📁" : isImage(e) ? <Thumb path={e.path} modified={e.modified} fallback={icon(e.name)} /> : icon(e.name)}
+                    {m && <span className={`tile-mark mark ${m}`} title={CHANGE_LABEL[m] ?? m}>●</span>}</div>
+                  <div className="tile-name">{nameOf(e)}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {entries && shown.length === 0 && <p className="muted empty">{filter ? "一致する項目はありません" : "このフォルダーは空です"}</p>}
         {!entries && <p className="muted empty">読み込み中…</p>}
+      </div>
+
+      {preview && <Preview entry={selected.length === 1 ? selected[0] : null} count={selected.length}
+        git={selected.length === 1 && p.gitRoot && !selected[0].is_dir && markOf(selected[0]) ? { root: p.gitRoot, rel: rel(selected[0].path)!, kind: markOf(selected[0])! } : null} />}
       </div>
 
       <div className="statusbar">
@@ -339,6 +379,10 @@ export default function FileBrowser(p: Props) {
               <hr />
               <div className={!clipboard ? "disabled" : ""} onClick={() => { setMenu(null); doPaste(); }}>📋 貼り付け</div>
               <div onClick={() => { setMenu(null); load(); }}>↻ 最新の情報に更新</div>
+              <hr />
+              <div onClick={() => { setMenu(null); changeView("large"); }}>{view === "large" ? "✔" : "　"} 大アイコン</div>
+              <div onClick={() => { setMenu(null); changeView("medium"); }}>{view === "medium" ? "✔" : "　"} 中アイコン</div>
+              <div onClick={() => { setMenu(null); changeView("details"); }}>{view === "details" ? "✔" : "　"} 詳細</div>
               <hr />
               <div onClick={() => { setMenu(null); fsApi.reveal(path); }}>OSのファイラーで表示</div>
             </>
@@ -381,4 +425,15 @@ function icon(name: string) {
   if (["ppt", "pptx"].includes(ext)) return "📙";
   if (["exe", "msi", "bat", "cmd", "ps1"].includes(ext)) return "⚙";
   return "📄";
+}
+
+const IMG = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif"];
+const isImage = (e: Entry) => !e.is_dir && IMG.includes(e.name.split(".").pop()?.toLowerCase() ?? "") && e.size < 50 * 1024 * 1024;
+
+/** 画像のサムネイル（読めなければ通常のアイコン） */
+function Thumb({ path, modified, fallback }: { path: string; modified: number | null; fallback: string }) {
+  const [bad, setBad] = useState(false);
+  if (bad) return <>{fallback}</>;
+  return <img className="thumb" loading="lazy" decoding="async" alt="" draggable={false}
+    src={`${convertFileSrc(path)}?v=${modified ?? 0}`} onError={() => setBad(true)} />;
 }

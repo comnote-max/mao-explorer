@@ -5,7 +5,7 @@ import ProjectList from "./screens/ProjectList";
 import ProjectScreen from "./screens/ProjectScreen";
 import FileBrowser from "./screens/FileBrowser";
 import { ProjectNode, TreeNode } from "./screens/FolderTree";
-import { api, fsApi, Place, Project } from "./api";
+import { api, baseName, fsApi, Place, Project } from "./api";
 import { T } from "./terms";
 
 export type Account = { login: string; name: string | null; avatar_url: string };
@@ -18,7 +18,48 @@ export default function App() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
-  const [loc, setLoc] = useState<Loc | null>(null);
+  // タブ：それぞれが1つの場所を表示する
+  const [tabs, setTabs] = useState<{ id: number; loc: Loc }[]>([]);
+  const [active, setActive] = useState(0);
+  const tab = tabs.find((t) => t.id === active) ?? tabs[0];
+  const loc: Loc | null = tab?.loc ?? null;
+  const setLoc = (v: Loc | ((l: Loc | null) => Loc | null)) =>
+    setTabs((ts) => {
+      if (!ts.length) { const l = typeof v === "function" ? v(null) : v; if (!l) return ts; setActive(1); return [{ id: 1, loc: l }]; }
+      const cur = ts.find((t) => t.id === active) ?? ts[0];
+      return ts.map((t) => (t.id === cur.id ? { ...t, loc: (typeof v === "function" ? v(t.loc) : v) ?? t.loc } : t));
+    });
+  const homeLoc = (): Loc => { const h = places.find((x) => x.kind === "quick"); return h ? { kind: "fs", path: h.path } : { kind: "github" }; };
+  const newTab = (l: Loc = loc ?? homeLoc()) => {
+    const id = Math.max(0, ...tabs.map((t) => t.id)) + 1;
+    setTabs([...tabs, { id, loc: l }]);
+    setActive(id);
+  };
+  const closeTab = (id: number) => {
+    if (tabs.length === 1) return;
+    const i = tabs.findIndex((t) => t.id === id);
+    const rest = tabs.filter((t) => t.id !== id);
+    setTabs(rest);
+    if (id === tab?.id) setActive(rest[Math.max(0, i - 1)].id);
+  };
+  const tabLabel = (l: Loc) =>
+    l.kind === "github" ? "🐙 GitHub"
+    : l.kind === "project" ? `📦 ${l.project.name}${l.path && baseName(l.path) !== T.mainBranch ? ` › ${baseName(l.path)}` : ""}`
+    : `📁 ${baseName(l.path) || l.path}`;
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (!e.ctrlKey) return;
+      if (e.key === "t") { e.preventDefault(); newTab(); }
+      if (e.key === "w" && tab) { e.preventDefault(); closeTab(tab.id); }
+      if (e.key === "Tab" && tabs.length > 1) {
+        e.preventDefault();
+        const i = tabs.findIndex((t) => t.id === tab?.id);
+        setActive(tabs[(i + (e.shiftKey ? -1 : 1) + tabs.length) % tabs.length].id);
+      }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
   const [open, setOpen] = useState({ pc: true, github: true });
 
   const refresh = () =>
@@ -41,7 +82,6 @@ export default function App() {
   }, []);
   useEffect(() => { if (account) loadProjects(); }, [account]);
 
-  const isFs = (path: string) => loc?.kind === "fs" && loc.path === path;
   const isProject = (fn: string) => loc?.kind === "project" && loc.project.full_name === fn;
 
   return (
@@ -74,12 +114,22 @@ export default function App() {
         </div>
       </aside>
       <section className="pane">
-        {loc?.kind === "fs" && <FileBrowser path={loc.path} onPathChange={(path) => setLoc({ kind: "fs", path })} />}
+        <div className="tabbar">
+          {tabs.map((t) => (
+            <div key={t.id} className={"tab" + (t.id === tab?.id ? " on" : "")} title={tabLabel(t.loc)}
+              onClick={() => setActive(t.id)} onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.id); } }}>
+              <span className="tab-label">{tabLabel(t.loc)}</span>
+              {tabs.length > 1 && <span className="tab-x" onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}>×</span>}
+            </div>
+          ))}
+          <button className="icon" title="新しいタブ（Ctrl+T）" onClick={() => newTab()}>＋</button>
+        </div>
+        {loc?.kind === "fs" && <FileBrowser key={tab!.id} path={loc.path} onPathChange={(path) => setLoc({ kind: "fs", path })} />}
         {loc?.kind === "github" && (account === null
           ? <Login onDone={refresh} initialError={error} />
           : <ProjectList projects={projects} error={listError} onOpen={(project) => setLoc({ kind: "project", project })} onReload={loadProjects} />)}
         {loc?.kind === "project" && (
-          <ProjectScreen key={loc.project.full_name} project={loc.project} path={loc.path}
+          <ProjectScreen key={`${tab!.id}:${loc.project.full_name}`} project={loc.project} path={loc.path}
             onPathChange={(path) => setLoc((l) => (l?.kind === "project" ? { ...l, path } : l))}
             onChanged={(p) => { setLoc({ kind: "project", project: p }); setProjects((l) => l?.map((x) => (x.full_name === p.full_name ? p : x)) ?? null); }} />
         )}

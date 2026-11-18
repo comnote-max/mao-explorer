@@ -30,6 +30,7 @@ export type Entry = { name: string; path: string; is_dir: boolean; size: number;
 
 export const fsApi = {
   places: () => invoke<Place[]>("fs_places"),
+  readText: (path: string) => invoke<string | null>("fs_read_text", { path }),
   list: (path: string, showHidden: boolean) => invoke<Entry[]>("fs_list", { path, showHidden }),
   newFolder: (dir: string, name: string) => invoke<string>("fs_new_folder", { dir, name }),
   newFile: (dir: string, name: string) => invoke<string>("fs_new_file", { dir, name }),
@@ -54,6 +55,7 @@ export const baseName = (p: string) => p.split(sep).filter(Boolean).pop() ?? p;
 
 export const api = {
   projects: () => invoke<Project[]>("projects"),
+  setPrivate: (fullName: string, priv: boolean) => invoke<Project>("set_private", { fullName, private: priv }),
   projectInfo: (fullName: string) => invoke<Project>("project_info", { fullName }),
   capability: (fullName: string) => invoke<Capability>("capability", { fullName }),
   browseRemote: (fullName: string, path: string, gitRef: string) =>
@@ -65,8 +67,10 @@ export const api = {
   firstSync: (fullName: string, defaultBranch: string, root: string) =>
     invoke<string>("first_sync", { fullName, defaultBranch, root }),
   folders: (fullName: string) => invoke<Folder[]>("folders", { fullName }),
+  removeFolder: (fullName: string, folder: string, remote: boolean) => invoke<void>("remove_folder", { fullName, folder, remote }),
   createFolder: (fullName: string, name: string, from?: string) => invoke<Folder>("create_folder", { fullName, name, from: from ?? null }),
   listLocal: (folder: string, rel: string) => invoke<LocalEntry[]>("list_local", { folder, rel }),
+  fileDiff: (folder: string, rel: string) => invoke<string | null>("file_diff", { folder, rel }),
   changes: (folder: string) => invoke<Change[]>("changes", { folder }),
   save: (folder: string, message: string, files: string[]) => invoke<string>("save", { folder, message, files }),
   sync: (folder: string) => invoke<SyncResult>("sync", { folder }),

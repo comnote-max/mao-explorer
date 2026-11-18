@@ -14,11 +14,32 @@ export default function ProjectScreen({ project, onChanged, path, onPathChange }
     api.capability(project.full_name).then(setCap).catch((e) => setCapError(String(e)));
   }, [project.full_name]);
 
+  const [switching, setSwitching] = useState(false);
+  const toggleVisibility = async () => {
+    if (project.access !== "admin" || switching) return;
+    const toPublic = project.private;
+    const msg = toPublic
+      ? `「${project.name}」を${T.public}にします。
+
+世界中の誰でも中身を見られるようになります（履歴の中の過去のファイルも含みます）。パスワードや個人情報が入っていないか確認してください。
+
+本当に${T.public}にしますか？`
+      : `「${project.name}」を${T.private}にします。
+招待した人以外は見られなくなります。よろしいですか？`;
+    if (!window.confirm(msg)) return;
+    setSwitching(true);
+    try { onChanged(await api.setPrivate(project.full_name, !toPublic)); }
+    catch (e) { window.alert(`切り替えられませんでした：${e}`); }
+    finally { setSwitching(false); }
+  };
+
   return (
     <>
       <header className="proj-head">
         <h2>{project.name}</h2>
-        <span className={"badge big " + (project.private ? "private" : "public")}>
+        <span className={"badge big clickable " + (project.private ? "private" : "public")}
+          title={project.access === "admin" ? `クリックで${project.private ? T.public : T.private}に切り替え` : "切り替えには管理者の権限が必要です"}
+          onClick={toggleVisibility}>
           {project.private ? `🔒 ${T.private}` : `🌐 ${T.public}`}
         </span>
         <span className="badge">{ACCESS_LABEL[project.access]}</span>
