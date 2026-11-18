@@ -1,0 +1,19 @@
+[package]
+name = "mao-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+keyring = { version = "3", features = ["windows-native", "apple-native"] }
+git2 = { version = "0.19", default-features = false, features = ["https", "vendored-libgit2"] }
+dirs = "5"
+trash = "5"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
