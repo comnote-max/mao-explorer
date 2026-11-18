@@ -65,6 +65,10 @@ async fn projects() -> R<Vec<ProjectView>> {
     Ok(list)
 }
 #[tauri::command]
+async fn create_project(name: String, private: bool, description: String) -> R<ProjectView> {
+    Ok(view(gh::create_project(name.trim(), private, description.trim()).await.map_err(s)?))
+}
+#[tauri::command]
 async fn project_info(full_name: String) -> R<ProjectView> {
     Ok(view(gh::project(&full_name).await.map_err(s)?))
 }
@@ -72,6 +76,18 @@ async fn project_info(full_name: String) -> R<ProjectView> {
 async fn set_private(full_name: String, private: bool) -> R<ProjectView> {
     Ok(view(gh::set_private(&full_name, private).await.map_err(s)?))
 }
+#[tauri::command]
+async fn members(full_name: String) -> R<Vec<gh::Member>> {
+    gh::members(&full_name).await.map_err(s)
+}
+#[tauri::command]
+async fn invites(full_name: String) -> R<Vec<gh::Invite>> { gh::invites(&full_name).await.map_err(s) }
+#[tauri::command]
+async fn invite(full_name: String, login: String, role: String) -> R<bool> { gh::invite(&full_name, login.trim().trim_start_matches('@'), &role).await.map_err(s) }
+#[tauri::command]
+async fn cancel_invite(full_name: String, id: u64) -> R<()> { gh::cancel_invite(&full_name, id).await.map_err(s) }
+#[tauri::command]
+async fn remove_member(full_name: String, login: String) -> R<()> { gh::remove_member(&full_name, &login).await.map_err(s) }
 #[tauri::command]
 async fn capability(full_name: String) -> R<gh::Capability> {
     let p = gh::project(&full_name).await.map_err(s)?;
@@ -291,9 +307,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             auth_account, login_start, login_poll, logout,
-            projects, project_info, capability, browse_remote, read_remote, readme, default_root, first_sync,
+            projects, create_project, project_info, capability, browse_remote, read_remote, readme, default_root, first_sync,
             folders, create_folder,
-            set_private,
+            set_private, members, invites, invite, cancel_invite, remove_member,
             remove_folder, list_local, changes, save, sync,
             requests, request_files, send_request, merge_folder, merge_request, request_changes,
             fs_places, fs_list, fs_new_folder, fs_new_file, fs_rename, fs_delete, fs_copy, fs_move, fs_open, fs_reveal, fs_read_text, file_diff

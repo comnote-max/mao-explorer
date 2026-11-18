@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
 import { api, fmtSize, Project, RemoteEntry } from "../api";
 import { T } from "../terms";
+import { isMarkdown, MarkdownToggle } from "../Markdown";
 
 /** 未同期プロジェクトの閲覧（読み取り専用）と初回同期。 */
 export default function RemoteView({ project, onSynced }: { project: Project; onSynced: () => void }) {
-  const [path, setPath] = useState("");
+  const [path, setPathRaw] = useState("");
+  const [back, setBack] = useState<string[]>([]);
+  const [fwd, setFwd] = useState<string[]>([]);
+  const [tick, setTick] = useState(0);
+  const setPath = (p: string) => { if (p === path) return; setBack((b) => [...b, path]); setFwd([]); setPathRaw(p); };
+  const goBack = () => { if (text) { setText(null); return; } const b = back[back.length - 1]; if (b === undefined) return; setBack(back.slice(0, -1)); setFwd([path, ...fwd]); setText(null); setPathRaw(b); };
+  const goFwd = () => { const f = fwd[0]; if (f === undefined) return; setFwd(fwd.slice(1)); setBack([...back, path]); setText(null); setPathRaw(f); };
   const [items, setItems] = useState<RemoteEntry[] | null>(null);
   const [text, setText] = useState<{ name: string; body: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +24,7 @@ export default function RemoteView({ project, onSynced }: { project: Project; on
     setError(null);
     api.browseRemote(project.full_name, path, project.default_branch).then(setItems).catch((e) => setError(String(e)));
     if (path === "") api.readme(project.full_name).then((r) => r && setText({ name: "README", body: r })).catch(() => {});
-  }, [path, project.full_name]);
+  }, [path, project.full_name, tick]);
 
   useEffect(() => {
     api.defaultRoot(project.name).then(setDest);
@@ -49,10 +56,25 @@ export default function RemoteView({ project, onSynced }: { project: Project; on
   };
 
   const crumbs = path ? path.split("/") : [];
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.altKey && e.key === "ArrowLeft") { e.preventDefault(); goBack(); }
+      if (e.altKey && e.key === "ArrowRight") { e.preventDefault(); goFwd(); }
+      if (e.altKey && e.key === "ArrowUp" && text) { e.preventDefault(); setText(null); return; }
+      if (e.altKey && e.key === "ArrowUp" && path) { e.preventDefault(); setPath(crumbs.slice(0, -1).join("/")); }
+      if (e.key === "F5") { e.preventDefault(); setTick((t) => t + 1); }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
 
   return (
     <>
       <div className="toolbar">
+        <button className="icon" title="戻る（Alt+←）" disabled={!back.length && !text} onClick={goBack}>←</button>
+        <button className="icon" title="進む（Alt+→）" disabled={!fwd.length} onClick={goFwd}>→</button>
+        <button className="icon" title="上へ（Alt+↑）" disabled={!path && !text} onClick={() => { if (text) { setText(null); return; } setPath(crumbs.slice(0, -1).join("/")); }}>↑</button>
+        <button className="icon" title="最新の状態に更新（F5）" onClick={() => setTick(tick + 1)}>↻</button>
         <div className="address">
           <span className="link" onClick={() => setPath("")}>{project.name}</span>
           {crumbs.map((c, i) => (
@@ -93,7 +115,9 @@ export default function RemoteView({ project, onSynced }: { project: Project; on
         {text && (
           <div className="preview">
             <div className="preview-title">{text.name}</div>
-            <pre>{text.body === undefined ? "読み込み中…" : text.body ?? "（このファイルはここでは表示できません）"}</pre>
+            {text.body && isMarkdown(text.name)
+              ? <MarkdownToggle key={text.name} text={text.body} source={<pre>{text.body}</pre>} />
+              : <pre>{text.body === undefined ? "読み込み中…" : text.body ?? "（このファイルはここでは表示できません）"}</pre>}
           </div>
         )}
       </div>

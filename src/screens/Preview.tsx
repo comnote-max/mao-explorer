@@ -4,6 +4,7 @@ import hljs from "highlight.js/lib/common";
 import "highlight.js/styles/github.css";
 import { api, Entry, fmtSize, fmtTime, fsApi } from "../api";
 import { CHANGE_LABEL } from "../terms";
+import { isMarkdown, MarkdownToggle } from "../Markdown";
 
 const IMG = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif"];
 const ext = (n: string) => (n.includes(".") ? n.split(".").pop()!.toLowerCase() : "");
@@ -58,6 +59,7 @@ export default function Preview({ entry, count, git }: {
   else if (IMG.includes(ext(entry.name))) body = <div className="preview-img"><img src={`${convertFileSrc(entry.path)}?v=${entry.modified ?? 0}`} alt="" /></div>;
   else if (text === undefined) body = <p className="muted empty">読み込み中…</p>;
   else if (text === null) body = <p className="muted empty">このファイルはプレビューできません（大きすぎるか、文字のファイルではありません）</p>;
+  else if (isMarkdown(entry.name)) body = <MarkdownToggle text={text} baseDir={entry.path.replace(/[\\/][^\\/]*$/, "")} source={<Code text={text} lang="md" />} />;
   else body = <Code text={text} lang={ext(entry.name)} />;
 
   return <aside className="preview-pane">{head}{tabs}{body}</aside>;

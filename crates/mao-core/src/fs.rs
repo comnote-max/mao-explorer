@@ -39,9 +39,65 @@ pub fn places() -> Vec<Place> {
     #[cfg(windows)]
     for c in b'A'..=b'Z' {
         let p = PathBuf::from(format!("{}:\\", c as char));
-        if p.exists() {
-            out.push(Place { name: format!("ドライブ ({}:)", c as char), path: p, kind: "drive".into() });
+        let present = unsafe { windows_sys::Win32::Storage::FileSystem::GetLogicalDrives() } & (1 << (c - b'A')) != 0;
+        if !present { continue; }
+        let (remote, label) = win_drive(&p);
+        let unc = if remote { win_unc(c as char) } else { String::new() };
+        if remote && unc.to_lowercase().contains("wsl") {
+            out.push(Place { name: format!("Linux ({}:)", c as char), path: p, kind: "drive".into() });
+            continue;
         }
+        if !remote && !p.exists() { continue; }
+        let letter = c as char;
+        // パソコン版 Google ドライブは「Google Drive」という名前の仮想ドライブになる
+        let gdrive = label.eq_ignore_ascii_case("Google Drive") || p.join("My Drive").exists() || p.join("マイドライブ").exists();
+        if gdrive {
+            // 「ミラーリング」設定だと、マイドライブの実体はホームフォルダにあり、G: にはショートカットだけが置かれる
+            if let Some(h) = dirs::home_dir() {
+                for sub in ["マイドライブ", "My Drive"] {
+                    if h.join(sub).is_dir() { out.push(Place { name: sub.into(), path: h.join(sub), kind: "gdrive".into() }); }
+                }
+            }
+            for sub in ["マイドライブ", "My Drive", "共有ドライブ", "Shared drives", "他のパソコン", "Other computers"] {
+                if p.join(sub).exists() { out.push(Place { name: sub.into(), path: p.join(sub), kind: "gdrive".into() }); }
+            }
+            if !out.iter().any(|x| x.kind == "gdrive") { out.push(Place { name: format!("Google ドライブ ({letter}:)"), path: p, kind: "gdrive".into() }); }
+        } else if remote {
+            let n = match unc.trim_start_matches('\\').split_once('\\') {
+                Some((host, share)) => format!("{share} - {host} ({letter}:)"),
+                None if !label.is_empty() => format!("{label} ({letter}:)"),
+                None => format!("ネットワーク ({letter}:)"),
+            };
+            out.push(Place { name: n, path: p, kind: "nas".into() });
+        } else {
+            out.push(Place { name: format!("ドライブ ({letter}:)"), path: p, kind: "drive".into() });
+        }
+    }
+    // OneDrive（個人用・職場用）。PCに同期されたフォルダーを使う。
+    let mut od: Vec<PathBuf> = vec![];
+    for v in ["OneDriveConsumer", "OneDriveCommercial", "OneDrive"] {
+        if let Some(p) = std::env::var_os(v).map(PathBuf::from) { od.push(p); }
+    }
+    if let Some(h) = dirs::home_dir() {
+        for base in [h.clone(), h.join("Library").join("CloudStorage")] {
+            if let Ok(rd) = std::fs::read_dir(&base) {
+                for e in rd.flatten() {
+                    let n = e.file_name().to_string_lossy().to_string();
+                    let p = e.path();
+                    if n.starts_with("OneDrive") && p.is_dir() { od.push(p); }
+                    else if n.starts_with("GoogleDrive") && p.is_dir() {
+                        out.push(Place { name: n.trim_start_matches("GoogleDrive-").into(), path: p, kind: "gdrive".into() });
+                    }
+                }
+            }
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    for p in od {
+        if !p.is_dir() || !seen.insert(p.to_string_lossy().to_lowercase()) { continue; }
+        let n = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let n = match n.split_once(" - ").or_else(|| n.split_once('-')) { Some((_, org)) => org.trim().to_string(), None => "個人用".into() };
+        out.push(Place { name: n, path: p, kind: "onedrive".into() });
     }
     #[cfg(not(windows))]
     {
@@ -242,4 +298,33 @@ mod tests {
         assert_eq!(names, vec!["新しいフォルダー", "改名.txt"]);
         let _ = std::fs::remove_dir_all(&d);
     }
+}
+
+/// (ネットワークドライブか, ボリューム名)
+#[cfg(windows)]
+fn win_drive(root: &std::path::Path) -> (bool, String) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetVolumeInformationW};
+    let w: Vec<u16> = root.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut name = [0u16; 261];
+    unsafe {
+        let remote = GetDriveTypeW(w.as_ptr()) == 4; // DRIVE_REMOTE
+        let ok = GetVolumeInformationW(w.as_ptr(), name.as_mut_ptr(), name.len() as u32,
+            std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), 0);
+        let len = name.iter().position(|&c| c == 0).unwrap_or(0);
+        (remote, if ok != 0 { String::from_utf16_lossy(&name[..len]) } else { String::new() })
+    }
+}
+
+/// ネットワークドライブの元のアドレス（\nas\share）。
+#[cfg(windows)]
+fn win_unc(letter: char) -> String {
+    use windows_sys::Win32::NetworkManagement::WNet::WNetGetConnectionW;
+    let local: Vec<u16> = format!("{letter}:").encode_utf16().chain(Some(0)).collect();
+    let mut buf = [0u16; 512];
+    let mut len = buf.len() as u32;
+    let r = unsafe { WNetGetConnectionW(local.as_ptr(), buf.as_mut_ptr(), &mut len) };
+    if r != 0 { return String::new(); }
+    let n = buf.iter().position(|&c| c == 0).unwrap_or(0);
+    String::from_utf16_lossy(&buf[..n])
 }

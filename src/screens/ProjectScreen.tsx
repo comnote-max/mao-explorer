@@ -3,6 +3,7 @@ import { api, Capability, Project } from "../api";
 import { ACCESS_LABEL, T } from "../terms";
 import RemoteView from "./RemoteView";
 import LocalView from "./LocalView";
+import Members from "./Members";
 
 export default function ProjectScreen({ project, onChanged, path, onPathChange }: {
   project: Project; onChanged: (p: Project) => void; path?: string; onPathChange?: (p: string) => void;
@@ -49,6 +50,7 @@ export default function ProjectScreen({ project, onChanged, path, onPathChange }
             : capError ? "権限を確認できません" : T.checking}
         </span>
         <span className="muted grow">{project.description}</span>
+        <Members project={project} />
       </header>
       {project.synced ? (
         <LocalView project={project} cap={cap} path={path} onPathChange={onPathChange} />

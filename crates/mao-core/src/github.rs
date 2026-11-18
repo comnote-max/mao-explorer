@@ -402,3 +402,64 @@ mod tests {
         assert_eq!(enc_path("資料/a b.txt"), "%E8%B3%87%E6%96%99/a%20b.txt");
     }
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Member {
+    pub login: String,
+    pub avatar_url: String,
+    /// admin / maintain / write / triage / read
+    pub role: String,
+}
+
+/// このプロジェクトに接続できる人（共同作業者）。見る権限しかないと GitHub が教えてくれないので Err になる。
+pub async fn members(full_name: &str) -> Result<Vec<Member>> {
+    let v = get(&format!("/repos/{full_name}/collaborators?per_page=100")).await?;
+    Ok(v.as_array().map(|a| a.iter().map(|m| Member {
+        login: m["login"].as_str().unwrap_or_default().into(),
+        avatar_url: m["avatar_url"].as_str().unwrap_or_default().into(),
+        role: m["role_name"].as_str().unwrap_or("read").into(),
+    }).collect()).unwrap_or_default())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Invite {
+    pub id: u64,
+    pub login: String,
+    pub avatar_url: String,
+    pub role: String,
+}
+
+/// 招待中（まだ相手が承諾していない）の人。
+pub async fn invites(full_name: &str) -> Result<Vec<Invite>> {
+    let v = get(&format!("/repos/{full_name}/invitations?per_page=100")).await?;
+    Ok(v.as_array().map(|a| a.iter().map(|i| Invite {
+        id: i["id"].as_u64().unwrap_or_default(),
+        login: i["invitee"]["login"].as_str().unwrap_or_default().into(),
+        avatar_url: i["invitee"]["avatar_url"].as_str().unwrap_or_default().into(),
+        role: match i["permissions"].as_str().unwrap_or("read") { "pull" => "read", "push" => "write", x => x }.into(),
+    }).collect()).unwrap_or_default())
+}
+
+/// 招待する／役割を変える。role: read / triage / write / maintain / admin。
+/// 戻り値 true=招待を送った、false=既に参加済みで役割だけ変えた。
+pub async fn invite(full_name: &str, login: &str, role: &str) -> Result<bool> {
+    let perm = match role { "read" => "pull", "write" => "push", x => x };
+    let v = send(client().put(url(&format!("/repos/{full_name}/collaborators/{login}"))).json(&json!({ "permission": perm }))).await?;
+    Ok(v.get("id").is_some())
+}
+
+pub async fn cancel_invite(full_name: &str, id: u64) -> Result<()> {
+    send(client().delete(url(&format!("/repos/{full_name}/invitations/{id}")))).await.map(|_| ())
+}
+
+pub async fn remove_member(full_name: &str, login: &str) -> Result<()> {
+    send(client().delete(url(&format!("/repos/{full_name}/collaborators/{login}")))).await.map(|_| ())
+}
+
+/// 新しいプロジェクト（リポジトリ）を自分のアカウントに作る。README 付きで作るので、すぐ同期できる。
+pub async fn create_project(name: &str, private: bool, description: &str) -> Result<Project> {
+    let v = send(client().post(url("/user/repos")).json(&json!({
+        "name": name, "private": private, "description": description, "auto_init": true,
+    }))).await?;
+    Ok(to_project(&v))
+}

@@ -25,7 +25,7 @@ export type MergeView =
   | { result: "blocked"; reason: string; number: number }
   | { result: "unverified"; number: number };
 
-export type Place = { name: string; path: string; kind: "quick" | "drive" };
+export type Place = { name: string; path: string; kind: "quick" | "drive" | "nas" | "onedrive" | "gdrive" };
 export type Entry = { name: string; path: string; is_dir: boolean; size: number; modified: number | null; hidden: boolean };
 
 export const fsApi = {
@@ -55,6 +55,12 @@ export const baseName = (p: string) => p.split(sep).filter(Boolean).pop() ?? p;
 
 export const api = {
   projects: () => invoke<Project[]>("projects"),
+  members: (fullName: string) => invoke<Member[]>("members", { fullName }),
+  invites: (fullName: string) => invoke<Invite[]>("invites", { fullName }),
+  invite: (fullName: string, login: string, role: string) => invoke<boolean>("invite", { fullName, login, role }),
+  cancelInvite: (fullName: string, id: number) => invoke<void>("cancel_invite", { fullName, id }),
+  removeMember: (fullName: string, login: string) => invoke<void>("remove_member", { fullName, login }),
+  createProject: (name: string, priv: boolean, description: string) => invoke<Project>("create_project", { name, private: priv, description }),
   setPrivate: (fullName: string, priv: boolean) => invoke<Project>("set_private", { fullName, private: priv }),
   projectInfo: (fullName: string) => invoke<Project>("project_info", { fullName }),
   capability: (fullName: string) => invoke<Capability>("capability", { fullName }),
@@ -89,3 +95,6 @@ export const api = {
 export const fmtSize = (n: number) =>
   n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 export const fmtTime = (s: number | null) => (s ? new Date(s * 1000).toLocaleString("ja-JP") : "");
+
+export type Member = { login: string; avatar_url: string; role: string };
+export type Invite = { id: number; login: string; avatar_url: string; role: string };
