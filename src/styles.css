@@ -232,3 +232,55 @@ button.icon.on { background: var(--sel); border-color: var(--line); }
 .md-view hr { border: 0; border-top: 1px solid var(--line); }
 .md-view input[type=checkbox] { margin-right: 6px; }
 .preview { display: flex; flex-direction: column; }
+.modal.history { width: min(1200px, 96vw); height: 86vh; }
+.history-body { display: flex; gap: 10px; flex: 1; min-height: 0; }
+.history-list { width: 300px; flex-shrink: 0; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.history-item { padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.history-item:hover { background: var(--bg2); }
+.history-item.on { background: var(--sel); }
+.history-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.history-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.history-files { max-height: 30%; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.history-file { padding: 4px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-file:hover { background: var(--bg2); }
+.history-file.on { background: var(--sel); }
+.history-diff { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; }
+.mark.ok { color: var(--ok); opacity: .6; }
+.settings-btn { margin-left: auto; }
+.field select { display: block; margin-top: 4px; padding: 4px 6px; min-width: 200px; }
+.check-row { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+.login-lead { text-align: center; line-height: 1.7; }
+.login-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+button.big { font-size: 15px; padding: 8px 24px; }
+.link-btn { background: none; border: none; color: var(--accent); text-decoration: underline; cursor: pointer; padding: 0; }
+/* 列を動かせる表：はみ出しは「…」 */
+.coltable { table-layout: fixed; min-width: 100%; }
+.coltable th, .coltable td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.coltable th { position: relative; cursor: grab; user-select: none; }
+.coltable th.dragging { opacity: .4; }
+.coltable th.drop-here { box-shadow: inset 3px 0 0 var(--accent); }
+.col-resize { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; }
+.col-resize:hover { background: var(--accent); opacity: .4; }
+.coltable th { border-right: 1px solid var(--line); }
+.coltable th:last-child { border-right: none; }
+.coltable th:hover { background: var(--bg2); }
+.field .row { display: flex; gap: 6px; }
+.addr-path { margin-left: auto; padding-left: 12px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.addr-path:hover { color: var(--accent); text-decoration: underline; }
+.address:has(.addr-path) { display: flex; align-items: center; min-width: 0; }
+.address:has(.addr-path) > span:not(.addr-path) { white-space: nowrap; }
+#proj-head-slot { display: contents; }
+.sync-btn { font-weight: 600; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.sync-icon { display: inline-block; font-size: 16px; line-height: 1; }
+.sync-icon.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.cloud-state { font-size: 12px; padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+.cloud-state.ok { color: #1a7f37; background: color-mix(in srgb, #1a7f37 12%, transparent); }
+.cloud-state.warn { color: #9a6700; background: color-mix(in srgb, #d4a72c 18%, transparent); }
+.proj-head > * { white-space: nowrap; flex-shrink: 0; }
+.proj-head > .grow { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.members-btn.alone { border-color: var(--accent); color: var(--accent); }
+.drop-over { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 12%, transparent) !important; }
+.drag-ghost { position: fixed; z-index: 9999; pointer-events: none; background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 3px 8px; font-size: 12px; box-shadow: 0 4px 12px #0003; white-space: nowrap; }
+body.dragging-files, body.dragging-files * { cursor: copy !important; user-select: none; }

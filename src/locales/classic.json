@@ -1,0 +1,211 @@
+{
+  "_": "クラシックモード：訳した後の文言で、やさしい言い方を Git の正式な用語に置き換える。上から順に（長いものから）置き換える。",
+  "ja": [
+    [
+      "全世界に公開",
+      "パブリック"
+    ],
+    [
+      "招待した人だけ",
+      "プライベート"
+    ],
+    [
+      "本体へ反映依頼",
+      "プルリクエスト作成"
+    ],
+    [
+      "反映依頼",
+      "プルリクエスト"
+    ],
+    [
+      "本体に反映済み",
+      "mainにマージ済み"
+    ],
+    [
+      "本体に反映",
+      "mainにマージ"
+    ],
+    [
+      "本体へ反映",
+      "mainへマージ"
+    ],
+    [
+      "反映",
+      "マージ"
+    ],
+    [
+      "本体",
+      "main"
+    ],
+    [
+      "下書き",
+      "ブランチ"
+    ],
+    [
+      "保存して送信",
+      "コミット＆プッシュ"
+    ],
+    [
+      "保存して送る",
+      "コミット＆プッシュ"
+    ],
+    [
+      "履歴保存",
+      "コミット"
+    ],
+    [
+      "初回同期",
+      "クローン"
+    ],
+    [
+      "送受信待ち",
+      "プッシュ/プル待ち"
+    ],
+    [
+      "同期",
+      "プッシュ/プル"
+    ],
+    [
+      "PCに取り込む",
+      "クローンする"
+    ],
+    [
+      "PCに取り込みます",
+      "クローンします"
+    ],
+    [
+      "クラウドのみ",
+      "未クローン"
+    ],
+    [
+      "PCと同期中",
+      "クローン済み"
+    ]
+  ],
+  "en": [
+    [
+      "Public to everyone",
+      "Public"
+    ],
+    [
+      "Invited people only",
+      "Private"
+    ],
+    [
+      "Request publish to Main",
+      "Create pull request"
+    ],
+    [
+      "Publish requests",
+      "Pull requests"
+    ],
+    [
+      "Publish request",
+      "Pull request"
+    ],
+    [
+      "Published to Main",
+      "Merged into main"
+    ],
+    [
+      "published to Main",
+      "merged into main"
+    ],
+    [
+      "Publish to Main",
+      "Merge into main"
+    ],
+    [
+      "published to",
+      "merged into"
+    ],
+    [
+      "Published",
+      "Merged"
+    ],
+    [
+      "Publishing",
+      "Merging"
+    ],
+    [
+      "Publishes",
+      "Merges"
+    ],
+    [
+      "Publish",
+      "Merge"
+    ],
+    [
+      "publishes",
+      "merges"
+    ],
+    [
+      "publish",
+      "merge"
+    ],
+    [
+      "Main",
+      "main"
+    ],
+    [
+      "Drafts",
+      "Branches"
+    ],
+    [
+      "Draft",
+      "Branch"
+    ],
+    [
+      "drafts",
+      "branches"
+    ],
+    [
+      "draft",
+      "branch"
+    ],
+    [
+      "Save & send",
+      "Commit & push"
+    ],
+    [
+      "Saved to history",
+      "Committed"
+    ],
+    [
+      "Saving to history",
+      "Committing"
+    ],
+    [
+      "Save to history",
+      "Commit"
+    ],
+    [
+      "saved to history",
+      "committed"
+    ],
+    [
+      "First sync",
+      "Clone"
+    ],
+    [
+      "Waiting to sync",
+      "Waiting to push/pull"
+    ],
+    [
+      "Sync",
+      "Push/Pull"
+    ],
+    [
+      "Download to this PC",
+      "Clone"
+    ],
+    [
+      "Cloud only",
+      "Not cloned"
+    ],
+    [
+      "Synced to PC",
+      "Cloned"
+    ]
+  ]
+}

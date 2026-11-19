@@ -1,4 +1,5 @@
-/** 仮想フォルダの「copy01」番号。一度付けた番号は変えない（片付けても他の番号はずれない）。 */
+import { t } from "./i18n";
+/** 仮想フォルダの「下書き01」番号。一度付けた番号は変えない（片付けても他の番号はずれない）。 */
 const key = (fullName: string) => `mao.copyNo.${fullName}`;
 
 export function copyNumbers(fullName: string, names: string[]): Record<string, number> {
@@ -11,7 +12,7 @@ export function copyNumbers(fullName: string, names: string[]): Record<string, n
   return map;
 }
 
-export const copyText = (n: number) => `copy${String(n).padStart(2, "0")}`;
+export const copyText = (n: number) => t("下書き{0}", [String(n).padStart(2, "0")]);
 
-/** 黄色い楕円の「copy01」タグ */
+/** 黄色い楕円の「下書き01」タグ */
 export const CopyTag = ({ n }: { n: number }) => <span className="copytag">{copyText(n)}</span>;

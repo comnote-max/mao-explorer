@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { T } from "../terms";
+import { t , tErr } from "../i18n";
 
 type DeviceCode = {
   device_code: string;
@@ -32,10 +33,10 @@ export default function Login({ onDone, initialError }: { onDone: () => void; in
         if (r.state === "pending") return poll(dc, interval);
         if (r.state === "slow_down") return poll(dc, r.interval);
         setCode(null);
-        setError(r.state === "expired" ? "コードの有効期限が切れました。もう一度お試しください。" : "接続が拒否されました。");
+        setError(r.state === "expired" ? t("コードの有効期限が切れました。もう一度お試しください。") : t("接続が拒否されました。"));
       } catch (e) {
         setCode(null);
-        setError(String(e));
+        setError(tErr(e));
       }
     }, interval * 1000);
   };
@@ -49,21 +50,28 @@ export default function Login({ onDone, initialError }: { onDone: () => void; in
       await openUrl(dc.verification_uri);
       poll(dc, dc.interval);
     } catch (e) {
-      setError(String(e));
+      setError(tErr(e));
     }
   };
 
   return (
     <main className="center">
-      <h1>MAO Explorer</h1>
+      <h1>🐙 GitHub</h1>
+      {!code && <>
+        <p className="login-lead">{t("ここは GitHub というクラウドに置いた、みんなで使うフォルダです。")}<br />{t("使うには GitHub のアカウントで接続してください。")}</p>
+      </>}
       {code ? (
         <>
-          <p>ブラウザで次のコードを入力してください（コピー済み）</p>
+          <p>{t("ブラウザで次のコードを入力してください（コピー済み）")}</p>
           <div className="code">{code.user_code}</div>
-          <p className="muted">入力が終わると自動で接続されます…</p>
+          <p className="muted">{t("入力が終わると自動で接続されます…")}</p>
         </>
       ) : (
-        <button className="primary" onClick={start}>{T.login}</button>
+        <div className="login-actions">
+          <button className="primary big" onClick={start}>{T.login}</button>
+          <p className="muted">{t("アカウントをお持ちでない方")}　<button className="link-btn" onClick={() => openUrl("https://github.com/signup")}>{t("無料で新規登録")}</button></p>
+          <p className="muted small-text">{t("登録が終わったら、上の「{0}」を押してください。", [T.login])}</p>
+        </div>
       )}
       {error && <p className="error">{error}</p>}
     </main>

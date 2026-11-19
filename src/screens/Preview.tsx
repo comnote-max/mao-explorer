@@ -5,6 +5,7 @@ import "highlight.js/styles/github.css";
 import { api, Entry, fmtSize, fmtTime, fsApi } from "../api";
 import { CHANGE_LABEL } from "../terms";
 import { isMarkdown, MarkdownToggle } from "../Markdown";
+import { t } from "../i18n";
 
 const IMG = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "avif"];
 const ext = (n: string) => (n.includes(".") ? n.split(".").pop()!.toLowerCase() : "");
@@ -33,12 +34,12 @@ export default function Preview({ entry, count, git }: {
     return () => { live = false; };
   }, [entry?.path, entry?.modified]);
 
-  if (!entry) return <aside className="preview-pane"><p className="muted empty">{count > 1 ? `${count} 個の項目を選択中` : "プレビューするファイルを選択してください"}</p></aside>;
+  if (!entry) return <aside className="preview-pane"><p className="muted empty">{count > 1 ? t("{0} 個の項目を選択中", [count]) : t("プレビューするファイルを選択してください")}</p></aside>;
 
   const head = (
     <div className="preview-title" title={entry.path}>
       {entry.name}
-      <div className="muted small-text">{entry.is_dir ? "フォルダー" : fmtSize(entry.size)}　{fmtTime(entry.modified)}</div>
+      <div className="muted small-text">{entry.is_dir ? t("フォルダー") : fmtSize(entry.size)}　{fmtTime(entry.modified)}</div>
     </div>
   );
 
@@ -46,19 +47,19 @@ export default function Preview({ entry, count, git }: {
   const tabs = git && (
     <div className="preview-tabs">
       <span className={`mark ${git.kind}`}>● {CHANGE_LABEL[git.kind] ?? git.kind}</span>
-      <button className={"small" + (showDiff ? " on" : "")} onClick={() => setMode("diff")}>変更点</button>
-      <button className={"small" + (!showDiff ? " on" : "")} onClick={() => setMode("content")}>内容</button>
+      <button className={"small" + (showDiff ? " on" : "")} onClick={() => setMode("diff")}>{t("変更点")}</button>
+      <button className={"small" + (!showDiff ? " on" : "")} onClick={() => setMode("content")}>{t("内容")}</button>
     </div>
   );
 
   let body;
-  if (showDiff) body = diff === undefined ? <p className="muted empty">読み込み中…</p>
-    : diff === null ? <p className="muted empty">文字のファイルではないため、変更点を表示できません</p>
+  if (showDiff) body = diff === undefined ? <p className="muted empty">{t("読み込み中…")}</p>
+    : diff === null ? <p className="muted empty">{t("文字のファイルではないため、変更点を表示できません")}</p>
     : <Diff text={diff} />;
-  else if (entry.is_dir) body = <p className="muted empty">📁 フォルダー</p>;
+  else if (entry.is_dir) body = <p className="muted empty">{t("📁 フォルダー")}</p>;
   else if (IMG.includes(ext(entry.name))) body = <div className="preview-img"><img src={`${convertFileSrc(entry.path)}?v=${entry.modified ?? 0}`} alt="" /></div>;
-  else if (text === undefined) body = <p className="muted empty">読み込み中…</p>;
-  else if (text === null) body = <p className="muted empty">このファイルはプレビューできません（大きすぎるか、文字のファイルではありません）</p>;
+  else if (text === undefined) body = <p className="muted empty">{t("読み込み中…")}</p>;
+  else if (text === null) body = <p className="muted empty">{t("このファイルはプレビューできません（大きすぎるか、文字のファイルではありません）")}</p>;
   else if (isMarkdown(entry.name)) body = <MarkdownToggle text={text} baseDir={entry.path.replace(/[\\/][^\\/]*$/, "")} source={<Code text={text} lang="md" />} />;
   else body = <Code text={text} lang={ext(entry.name)} />;
 
@@ -90,8 +91,8 @@ function Code({ text, lang }: { text: string; lang: string }) {
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** 変更点：追加は緑、削除は赤。左に変更前・変更後の行番号。 */
-function Diff({ text }: { text: string }) {
-  if (!text.trim()) return <p className="muted empty">最後の保存から変わっていません</p>;
+export function Diff({ text }: { text: string }) {
+  if (!text.trim()) return <p className="muted empty">{t("最後の履歴保存から変わっていません")}</p>;
   const rows: { o: number | null; n: number | null; kind: string; s: string }[] = [];
   let o = 0, n = 0;
   for (const line of text.split("\n")) {

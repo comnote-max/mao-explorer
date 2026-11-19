@@ -51,11 +51,13 @@ struct ProjectView {
     project: gh::Project,
     synced: bool,
     root: Option<PathBuf>,
+    /// 本体のフォルダ
+    main: Option<PathBuf>,
 }
 
 fn view(p: gh::Project) -> ProjectView {
-    let lp = pj::local(&p.full_name);
-    ProjectView { synced: lp.is_some(), root: lp.map(|l| l.root), project: p }
+    let lp = pj::local(&p.full_name).or_else(|| pj::adopt_existing(&p.full_name, &[&p.name, &gh::display_name(&p.name, p.description.as_deref())], &p.default_branch));
+    ProjectView { synced: lp.is_some(), main: lp.as_ref().map(|l| l.main_dir()), root: lp.map(|l| l.root), project: p }
 }
 
 #[tauri::command]
@@ -109,6 +111,36 @@ async fn readme(full_name: String) -> R<Option<String>> {
 fn default_root(name: String) -> PathBuf {
     pj::default_root(&name)
 }
+/// GitHub Desktop でこのフォルダを開く（入っていなければ false）
+#[tauri::command]
+fn open_in_desktop(path: PathBuf) -> R<bool> {
+    let url = format!("x-github-client://openLocalRepo/{}", path.display());
+    #[cfg(windows)]
+    {
+        // 関連付けがなければ GitHub Desktop は入っていない
+        let installed = std::process::Command::new("reg")
+            .args(["query", r"HKCR\x-github-client"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !installed { return Ok(false); }
+        std::process::Command::new("explorer.exe").arg(&url).spawn().map_err(s)?;
+        Ok(true)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Ok(false)
+    }
+}
+#[tauri::command]
+fn master_dir() -> PathBuf {
+    pj::master_dir()
+}
+#[tauri::command]
+fn set_master_dir(dir: PathBuf) -> R<()> {
+    pj::set_master_dir(&dir).map_err(s)
+}
 #[tauri::command]
 async fn first_sync(full_name: String, default_branch: String, root: PathBuf) -> R<PathBuf> {
     blocking(move || pj::first_sync(&full_name, &default_branch, &root)).await
@@ -121,8 +153,29 @@ async fn folders(full_name: String) -> R<Vec<pj::Folder>> {
     blocking(move || pj::folders(&full_name)).await
 }
 #[tauri::command]
-async fn create_folder(full_name: String, name: String, from: Option<PathBuf>) -> R<pj::Folder> {
-    blocking(move || pj::create_folder(&full_name, &name, from.as_deref())).await
+async fn create_folder(full_name: String, name: String, from: Option<PathBuf>, at: Option<String>) -> R<pj::Folder> {
+    blocking(move || pj::create_folder(&full_name, &name, from.as_deref(), at.as_deref())).await
+}
+#[tauri::command]
+async fn history(folder: PathBuf) -> R<Vec<pj::HistoryEntry>> {
+    blocking(move || pj::history(&folder, 300)).await
+}
+#[tauri::command]
+async fn history_files(folder: PathBuf, id: String) -> R<Vec<pj::Change>> {
+    blocking(move || pj::history_files(&folder, &id)).await
+}
+#[tauri::command]
+async fn history_diff(folder: PathBuf, id: String, rel: String) -> R<Option<String>> {
+    blocking(move || pj::history_diff(&folder, &id, &rel)).await
+}
+#[tauri::command]
+async fn restore_file(folder: PathBuf, id: String, rel: String) -> R<()> {
+    blocking(move || pj::restore_file(&folder, &id, &rel)).await
+}
+#[tauri::command]
+async fn restore_all(folder: PathBuf, id: String) -> R<String> {
+    let me = login().await?;
+    blocking(move || pj::restore_all(&folder, &id, &me)).await
 }
 #[tauri::command]
 async fn remove_folder(full_name: String, folder: PathBuf, remote: bool) -> R<()> {
@@ -228,7 +281,7 @@ async fn merge_folder(full_name: String, folder: PathBuf, title: String) -> R<Me
     // 手元の「本体」フォルダにも反映後の内容を取り込む（未保存の変更があれば何もしない）
     blocking(move || {
         pj::refresh(&folder)?;
-        if let Some(main) = folder.parent().map(|p| p.join(pj::MAIN_DIR)) {
+        if let Some(main) = pj::main_of(&folder) {
             if main != folder && main.exists() { let _ = pj::sync(&main, &me); }
         }
         Ok(())
@@ -307,8 +360,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             auth_account, login_start, login_poll, logout,
-            projects, create_project, project_info, capability, browse_remote, read_remote, readme, default_root, first_sync,
-            folders, create_folder,
+            projects, create_project, project_info, capability, browse_remote, read_remote, readme, default_root, master_dir, set_master_dir, open_in_desktop, first_sync,
+            folders, create_folder, history, history_files, history_diff, restore_file, restore_all,
             set_private, members, invites, invite, cancel_invite, remove_member,
             remove_folder, list_local, changes, save, sync,
             requests, request_files, send_request, merge_folder, merge_request, request_changes,

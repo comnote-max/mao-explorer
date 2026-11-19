@@ -456,10 +456,41 @@ pub async fn remove_member(full_name: &str, login: &str) -> Result<()> {
     send(client().delete(url(&format!("/repos/{full_name}/collaborators/{login}")))).await.map(|_| ())
 }
 
-/// 新しいプロジェクト（リポジトリ）を自分のアカウントに作る。README 付きで作るので、すぐ同期できる。
+/// 説明の先頭【…】に入れた表示名（日本語名）。なければリポジトリ名。
+pub fn display_name(name: &str, description: Option<&str>) -> String {
+    description
+        .and_then(|d| d.strip_prefix('【'))
+        .and_then(|d| d.split_once('】'))
+        .map(|(n, _)| n.to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn base64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in data.chunks(3) {
+        let b = [c[0], *c.get(1).unwrap_or(&0), *c.get(2).unwrap_or(&0)];
+        let n = (b[0] as u32) << 16 | (b[1] as u32) << 8 | b[2] as u32;
+        for i in 0..4 {
+            out.push(if i <= c.len() { T[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
+}
+
+/// 新しいプロジェクト（リポジトリ）を自分のアカウントに作る。
+/// README は表示名（日本語名）を見出しにして作るので、すぐ同期できる。
 pub async fn create_project(name: &str, private: bool, description: &str) -> Result<Project> {
     let v = send(client().post(url("/user/repos")).json(&json!({
-        "name": name, "private": private, "description": description, "auto_init": true,
+        "name": name, "private": private, "description": description, "auto_init": false,
     }))).await?;
-    Ok(to_project(&v))
+    let p = to_project(&v);
+    let title = display_name(name, Some(description));
+    let rest = description.split_once('】').map(|(_, r)| r).unwrap_or(if description.starts_with('【') { "" } else { description }).trim();
+    let body = if rest.is_empty() { format!("# {title}\n") } else { format!("# {title}\n\n{rest}\n") };
+    send(client().put(url(&format!("/repos/{}/contents/README.md", p.full_name))).json(&json!({
+        "message": "最初の保存", "content": base64(body.as_bytes()),
+    }))).await?;
+    Ok(p)
 }

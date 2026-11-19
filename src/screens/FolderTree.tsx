@@ -1,7 +1,9 @@
 import { ReactNode, useEffect, useState } from "react";
-import { api, Folder, fsApi, Project } from "../api";
+import { api, dispName, Folder, fsApi, Project } from "../api";
 import { T } from "../terms";
 import { copyNumbers, CopyTag } from "../copyNo";
+import { t , tErr } from "../i18n";
+import { dropProps } from "../dnd";
 
 const norm = (p: string) => p.replace(/[\\/]+$/, "").toLowerCase();
 export const isUnder = (child: string, parent: string) => {
@@ -37,7 +39,7 @@ export function TreeNode({ path, label, icon, depth, current, onSelect, extra, e
 
   return (
     <>
-      <div className={"tree-item" + (active ? " active" : "")} style={{ paddingLeft: 8 + depth * 14 }} title={path}
+      <div className={"tree-item" + (active ? " active" : "")} style={{ paddingLeft: 8 + depth * 14 }} title={path} {...dropProps(path)}
         onClick={() => onSelect(path)} onDoubleClick={toggle}
         onContextMenu={onMenu ? (e) => { e.preventDefault(); onMenu(e); } : undefined}>
         <span className="twisty" onClick={toggle}>{kids && kids.length === 0 && extraCount === 0 ? "" : open ? "▾" : "▸"}</span>
@@ -62,7 +64,7 @@ export function ProjectNode({ project, active, current, onSelect }: {
   useEffect(() => { if (!menu) return; const c = () => setMenu(null); window.addEventListener("click", c); return () => window.removeEventListener("click", c); }, [menu]);
   const load = () => api.folders(project.full_name).then(setFolders).catch(() => setFolders([]));
 
-  useEffect(() => { if (active && project.synced) { setOpen(true); load(); } }, [active, current]);
+  useEffect(() => { if (active && project.synced) { setOpen(true); load(); } }, [active, current, project.synced]);
 
   const toggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -78,17 +80,17 @@ export function ProjectNode({ project, active, current, onSelect }: {
     const unsaved = f.state.changes > 0;
     const unmerged = f.state.not_in_main > 0;
     const msg = [
-      `「${tag}」を削除します。`,
-      unsaved ? `・未保存の変更が ${f.state.changes} 件あります。` : "",
-      unmerged ? `・${T.mainBranch}に未反映の${T.commit}があります。GitHub上には残すので、あとから取り戻せます。` : `・${T.mainBranch}に反映済みなので、GitHub上からも片付けます。`,
-      "フォルダはごみ箱へ移します（ごみ箱から元に戻せます）。",
+      t("「{0}」を削除します。", [tag]),
+      unsaved ? t("・履歴未保存の変更が {0} 件あります。", [f.state.changes]) : "",
+      unmerged ? t("・{0}に未反映の{1}があります。クラウドには残すので、あとから取り戻せます。", [T.mainBranch, T.commit]) : t("・{0}に反映済みなので、クラウドからも片付けます。", [T.mainBranch]),
+      t("フォルダはごみ箱へ移します（ごみ箱から元に戻せます）。"),
     ].filter(Boolean).join("\n");
     if (!window.confirm(msg)) return;
     try {
       await api.removeFolder(project.full_name, f.path, !unmerged);
       if (current && isUnder(current, f.path) && main) onSelect(main.path);
       load();
-    } catch (e) { window.alert(`削除できませんでした：${e}`); }
+    } catch (e) { window.alert(t("削除できませんでした：{0}", [tErr(e)])); }
   };
   const virt = folders?.filter((f) => !f.is_main) ?? [];
   const nums = copyNumbers(project.full_name, virt.map((f) => f.name));
@@ -99,7 +101,7 @@ export function ProjectNode({ project, active, current, onSelect }: {
       <div className={"tree-item" + (active && !current ? " active" : "") + (project.synced ? "" : " unsynced")}
         style={{ paddingLeft: 22 }} title={project.full_name} onClick={() => onSelect()} onDoubleClick={toggle}>
         <span className="twisty" onClick={toggle}>{project.synced ? (open ? "▾" : "▸") : ""}</span>
-        📦 {project.name} {project.private && <span className="lock">🔒</span>}
+        ☁ {dispName(project)} {project.private && <span className="lock">🔒</span>}
       </div>
       {open && main && (
         <TreeNode path={main.path} label={T.mainBranch} icon="🏠" depth={2} current={current} onSelect={onSelect}
@@ -110,9 +112,9 @@ export function ProjectNode({ project, active, current, onSelect }: {
       )}
       {menu && (
         <div className="menu" style={{ position: "fixed", left: menu.x, top: menu.y }}>
-          <div onClick={() => onSelect(menu.f.path)}>開く</div>
+          <div onClick={() => onSelect(menu.f.path)}>{t("開く")}</div>
           <hr />
-          <div onClick={() => remove(menu.f)}>🗑 このコピーを削除</div>
+          <div onClick={() => remove(menu.f)}>{t("🗑 この下書きを削除")}</div>
         </div>
       )}
     </>

@@ -1,8 +1,9 @@
 //! ローカルのプロジェクト（初回同期・仮想フォルダ・状態・保存・同期）。
 //!
 //! 配置:
-//!   <root>/本体/          … 既定ブランチの作業フォルダ（通常のクローン）
-//!   <root>/<仮想フォルダ名>/ … git worktree（ブランチ mao/<名前>）
+//!   <保存先>/<名前>/                   … 本体（通常のクローン。GitHub Desktop と同じ場所）
+//!   <保存先>/.mao-drafts/<名前>/<下書き>/ … git worktree（ブランチ mao/<名前>）
+//! 旧形式（<root>/本体/ と <root>/<下書き>/）もそのまま使える。
 use git2::{
     build::{CheckoutBuilder, RepoBuilder},
     BranchType, Cred, FetchOptions, IndexAddOption, PushOptions, RemoteCallbacks, Repository, Signature,
@@ -35,8 +36,99 @@ fn user<T>(m: impl Into<String>) -> Result<T> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalProject {
+    /// 下書き（worktree）を置く場所
     pub root: PathBuf,
     pub default_branch: String,
+    /// 本体の場所（なければ旧形式の <root>/本体）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main: Option<PathBuf>,
+}
+
+impl LocalProject {
+    pub fn main_dir(&self) -> PathBuf {
+        self.main.clone().unwrap_or_else(|| self.root.join(MAIN_DIR))
+    }
+}
+
+// ---------- 保存先（マスターフォルダ） ----------
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct Settings {
+    #[serde(default)]
+    master: Option<PathBuf>,
+}
+
+fn settings_path() -> PathBuf {
+    dirs::data_dir().unwrap_or_else(std::env::temp_dir).join("MAOExplorer").join("settings.json")
+}
+
+fn settings() -> Settings {
+    std::fs::read_to_string(settings_path()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+/// プロジェクトを置く親フォルダ。既定は C:\GitHub（GitHub Desktop と同じ）。
+pub fn master_dir() -> PathBuf {
+    settings().master.unwrap_or_else(|| {
+        let c = PathBuf::from("C:\\");
+        if cfg!(windows) && c.exists() { c.join("GitHub") } else { dirs::home_dir().unwrap_or_else(std::env::temp_dir).join("GitHub") }
+    })
+}
+
+pub fn set_master_dir(dir: &Path) -> Result<()> {
+    let mut st = settings();
+    st.master = Some(dir.into());
+    let p = settings_path();
+    std::fs::create_dir_all(p.parent().unwrap())?;
+    std::fs::write(&p, serde_json::to_string_pretty(&st).unwrap())?;
+    Ok(())
+}
+
+/// 本体の場所から、下書きを置く場所を決める（<親>/.mao-drafts/<名前>）
+fn drafts_root(main: &Path) -> PathBuf {
+    let name = main.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    main.parent().unwrap_or(main).join(".mao-drafts").join(name)
+}
+
+/// フォルダの origin が full_name の GitHub リポジトリか
+fn is_clone_of(dir: &Path, full_name: &str) -> bool {
+    let Ok(repo) = Repository::open(dir) else { return false };
+    let Ok(remote) = repo.find_remote("origin") else { return false };
+    let url = remote.url().unwrap_or_default().trim_end_matches('/').trim_end_matches(".git").to_lowercase();
+    let want = full_name.to_lowercase();
+    url.ends_with(&format!("/{want}")) || url.ends_with(&format!(":{want}"))
+}
+
+fn register(full_name: &str, default_branch: &str, main: &Path) -> Result<LocalProject> {
+    let lp = LocalProject { root: drafts_root(main), default_branch: default_branch.into(), main: Some(main.into()) };
+    let mut reg = registry();
+    reg.insert(full_name.into(), lp.clone());
+    save_registry(&reg)?;
+    Ok(lp)
+}
+
+/// 保存先にすでにクローンがあれば（GitHub Desktop などで取り込み済み）、そのまま本体として使う
+pub fn adopt_existing(full_name: &str, names: &[&str], default_branch: &str) -> Option<LocalProject> {
+    names.iter().find_map(|name| {
+        let dir = master_dir().join(safe_file_name(name));
+        if dir.join(".git").exists() && is_clone_of(&dir, full_name) { register(full_name, default_branch, &dir).ok() } else { None }
+    })
+}
+
+/// 下書き（worktree）や本体の中のフォルダから、本体のフォルダを求める
+pub fn main_of(folder: &Path) -> Option<PathBuf> {
+    let repo = Repository::open(folder).ok()?;
+    if !repo.is_worktree() {
+        return repo.workdir().map(|p| p.to_path_buf());
+    }
+    // worktree の .git/worktrees/<id>/commondir に本体の .git への相対パスが書いてある
+    let gitdir = repo.path();
+    let rel = std::fs::read_to_string(gitdir.join("commondir")).ok()?;
+    let common = gitdir.join(rel.trim());
+    let common = std::fs::canonicalize(&common).unwrap_or(common);
+    let main = common.parent()?.to_path_buf();
+    // canonicalize の \\?\ 接頭辞を外す
+    let s = main.to_string_lossy();
+    Some(PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()))
 }
 
 fn registry_path() -> PathBuf {
@@ -58,15 +150,12 @@ fn save_registry(r: &BTreeMap<String, LocalProject>) -> Result<()> {
 }
 
 pub fn local(full_name: &str) -> Option<LocalProject> {
-    registry().get(full_name).cloned().filter(|p| p.root.join(MAIN_DIR).join(".git").exists())
+    registry().get(full_name).cloned().filter(|p| p.main_dir().join(".git").exists())
 }
 
+/// 初回同期の既定の保存先（本体を置くフォルダ）
 pub fn default_root(name: &str) -> PathBuf {
-    dirs::document_dir()
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("MAO")
-        .join(safe_file_name(name))
+    master_dir().join(safe_file_name(name))
 }
 
 // ---------- 認証付きのリモート操作 ----------
@@ -118,9 +207,14 @@ fn push(repo: &Repository, branch: &str, token: &str) -> Result<()> {
 
 // ---------- 初回同期 ----------
 
-pub fn first_sync(full_name: &str, default_branch: &str, root: &Path) -> Result<PathBuf> {
+/// `main` に本体を取り込む。すでに同じリポジトリのクローンがあれば、それをそのまま使う。
+pub fn first_sync(full_name: &str, default_branch: &str, main: &Path) -> Result<PathBuf> {
+    if main.join(".git").exists() && is_clone_of(main, full_name) {
+        register(full_name, default_branch, main)?;
+        return Ok(main.into());
+    }
     let token = crate::github::token()?;
-    let main = root.join(MAIN_DIR);
+    let main = main.to_path_buf();
     if main.exists() && main.read_dir()?.next().is_some() {
         return user(format!("保存先が空ではありません: {}", main.display()));
     }
@@ -132,9 +226,7 @@ pub fn first_sync(full_name: &str, default_branch: &str, root: &Path) -> Result<
         let _ = std::fs::remove_dir_all(&main);
         return Err(e.into());
     }
-    let mut reg = registry();
-    reg.insert(full_name.into(), LocalProject { root: root.into(), default_branch: default_branch.into() });
-    save_registry(&reg)?;
+    register(full_name, default_branch, &main)?;
     Ok(main)
 }
 
@@ -165,7 +257,7 @@ pub struct FolderState {
 
 fn main_repo(full_name: &str) -> Result<(LocalProject, Repository)> {
     let lp = local(full_name).ok_or_else(|| ProjError::User("このプロジェクトはまだ同期されていません".into()))?;
-    let repo = Repository::open(lp.root.join(MAIN_DIR))?;
+    let repo = Repository::open(lp.main_dir())?;
     Ok((lp, repo))
 }
 
@@ -173,7 +265,7 @@ pub fn folders(full_name: &str) -> Result<Vec<Folder>> {
     let (lp, repo) = main_repo(full_name)?;
     let mut out = vec![Folder {
         name: MAIN_DIR.into(),
-        path: lp.root.join(MAIN_DIR),
+        path: lp.main_dir(),
         branch: lp.default_branch.clone(),
         is_main: true,
         state: state(&repo, &lp.default_branch, &lp.default_branch)?,
@@ -214,7 +306,7 @@ fn state(repo: &Repository, branch: &str, main: &str) -> Result<FolderState> {
 }
 
 /// `from` を指定すると、そのコピーの保存済みの内容から作る（未指定なら本体の最新から）。
-pub fn create_folder(full_name: &str, display: &str, from: Option<&Path>) -> Result<Folder> {
+pub fn create_folder(full_name: &str, display: &str, from: Option<&Path>, at: Option<&str>) -> Result<Folder> {
     let (lp, repo) = main_repo(full_name)?;
     let display = safe_file_name(display.trim());
     if display.is_empty() || display == MAIN_DIR {
@@ -224,9 +316,11 @@ pub fn create_folder(full_name: &str, display: &str, from: Option<&Path>) -> Res
     if path.exists() {
         return user("同じ名前のフォルダがすでにあります");
     }
+    std::fs::create_dir_all(&lp.root)?;
     let token = crate::github::token()?;
     fetch(&repo, &token).ok();
     let base = match from {
+        _ if at.is_some() => git2::Oid::from_str(at.unwrap_or_default())?,
         Some(f) => Repository::open(f)?.head()?.peel_to_commit()?.id(),
         None => repo
         .refname_to_id(&format!("refs/remotes/origin/{}", lp.default_branch))
@@ -248,7 +342,7 @@ pub fn create_folder(full_name: &str, display: &str, from: Option<&Path>) -> Res
 /// `remote` が true なら GitHub 上の作業場所も消す（本体に反映済みのときに使う）。
 pub fn remove_folder(full_name: &str, folder: &Path, remote: bool) -> Result<()> {
     let (lp, repo) = main_repo(full_name)?;
-    if folder == lp.root.join(MAIN_DIR) {
+    if folder == lp.main_dir() {
         return user("本体は削除できません");
     }
     let branch = branch_of(folder)?;
@@ -353,7 +447,7 @@ fn signature(repo: &Repository, login: &str) -> Result<Signature<'static>> {
 pub fn save(folder: &Path, message: &str, files: &[String], login: &str) -> Result<String> {
     let repo = Repository::open(folder)?;
     if message.trim().is_empty() {
-        return user("保存メッセージを入力してください");
+        return user("履歴保存のメッセージを入力してください");
     }
     let mut index = repo.index()?;
     if files.is_empty() {
@@ -372,7 +466,7 @@ pub fn save(folder: &Path, message: &str, files: &[String], login: &str) -> Resu
     let tree = repo.find_tree(index.write_tree()?)?;
     let parent = repo.head()?.peel_to_commit()?;
     if parent.tree_id() == tree.id() {
-        return user("保存する変更がありません");
+        return user("履歴保存する変更がありません");
     }
     let sig = signature(&repo, login)?;
     let id = repo.commit(Some("HEAD"), &sig, &sig, message.trim(), &tree, &[&parent])?;
@@ -645,4 +739,133 @@ mod tests {
         let spec = format!("refs/heads/{branch}:refs/heads/{branch}");
         repo.find_remote("origin").unwrap().push(&[spec.as_str()], None).unwrap();
     }
+}
+
+
+// ---------- 履歴 ----------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HistoryEntry {
+    pub id: String,
+    pub message: String,
+    pub author: String,
+    /// UNIX 秒
+    pub time: i64,
+    /// このPCだけにあり、まだ GitHub に送っていない
+    pub local_only: bool,
+}
+
+/// このフォルダの履歴保存の一覧（新しい順）。
+pub fn history(folder: &Path, limit: usize) -> Result<Vec<HistoryEntry>> {
+    let repo = Repository::open(folder)?;
+    let branch = branch_of(folder)?;
+    let remote = repo.refname_to_id(&format!("refs/remotes/origin/{branch}")).ok();
+    let mut walk = repo.revwalk()?;
+    walk.push_head()?;
+    walk.set_sorting(git2::Sort::TIME)?;
+    let mut out = vec![];
+    for id in walk.take(limit) {
+        let id = id?;
+        let c = repo.find_commit(id)?;
+        let local_only = match remote {
+            Some(r) => r != id && !repo.graph_descendant_of(r, id).unwrap_or(false),
+            None => true,
+        };
+        out.push(HistoryEntry {
+            id: id.to_string(),
+            message: c.message().unwrap_or_default().trim().to_string(),
+            author: c.author().name().unwrap_or_default().to_string(),
+            time: c.time().seconds(),
+            local_only,
+        });
+    }
+    Ok(out)
+}
+
+fn commit_and_parent_trees<'r>(repo: &'r Repository, id: &str) -> Result<(git2::Commit<'r>, git2::Tree<'r>, Option<git2::Tree<'r>>)> {
+    let c = repo.find_commit(git2::Oid::from_str(id)?)?;
+    let t = c.tree()?;
+    let p = c.parent(0).ok().and_then(|p| p.tree().ok());
+    Ok((c, t, p))
+}
+
+/// その履歴保存で変わったファイル。
+pub fn history_files(folder: &Path, id: &str) -> Result<Vec<Change>> {
+    let repo = Repository::open(folder)?;
+    let (_, t, p) = commit_and_parent_trees(&repo, id)?;
+    let diff = repo.diff_tree_to_tree(p.as_ref(), Some(&t), None)?;
+    Ok(diff.deltas().map(|d| {
+        let kind = match d.status() {
+            git2::Delta::Added => "added",
+            git2::Delta::Deleted => "deleted",
+            git2::Delta::Renamed => "renamed",
+            _ => "modified",
+        };
+        let path = d.new_file().path().or_else(|| d.old_file().path()).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+        Change { path, kind: kind.into() }
+    }).collect())
+}
+
+/// その履歴保存での、1ファイルの変更点。
+pub fn history_diff(folder: &Path, id: &str, rel: &str) -> Result<Option<String>> {
+    let repo = Repository::open(folder)?;
+    let (_, t, p) = commit_and_parent_trees(&repo, id)?;
+    let mut opts = git2::DiffOptions::new();
+    opts.pathspec(rel).disable_pathspec_match(true).context_lines(3);
+    let diff = repo.diff_tree_to_tree(p.as_ref(), Some(&t), Some(&mut opts))?;
+    let mut out = String::new();
+    let mut binary = false;
+    diff.print(git2::DiffFormat::Patch, |delta, _, line| {
+        if delta.flags().is_binary() { binary = true; return true; }
+        if matches!(line.origin(), '+' | '-' | ' ') { out.push(line.origin()); }
+        out.push_str(&String::from_utf8_lossy(line.content()));
+        out.len() < 2_000_000
+    })?;
+    if binary { return Ok(None); }
+    Ok(Some(out))
+}
+
+/// 1つのファイルを、その履歴保存の時点の中身に戻す（その時点で無かったファイルは消す）。
+/// 戻した結果は「履歴未保存の変更」になるので、いつでも元に戻せる。
+pub fn restore_file(folder: &Path, id: &str, rel: &str) -> Result<()> {
+    let repo = Repository::open(folder)?;
+    let (_, t, _) = commit_and_parent_trees(&repo, id)?;
+    let dest = folder.join(rel);
+    match t.get_path(Path::new(rel)) {
+        Ok(e) => {
+            let blob = repo.find_blob(e.id())?;
+            if let Some(d) = dest.parent() { std::fs::create_dir_all(d)?; }
+            std::fs::write(&dest, blob.content())?;
+        }
+        Err(_) => {
+            if dest.exists() { trash::delete(&dest).map_err(|e| ProjError::User(format!("ごみ箱へ移せませんでした：{e}")))?; }
+        }
+    }
+    Ok(())
+}
+
+/// フォルダ全体を、その履歴保存の時点の状態に戻す。
+/// 後の履歴は消さず、「この時点に戻した」という新しい履歴保存を追加する。
+pub fn restore_all(folder: &Path, id: &str, login: &str) -> Result<String> {
+    let repo = Repository::open(folder)?;
+    if !changes_of(&repo)?.is_empty() {
+        return user("履歴未保存の変更があります。先に履歴保存するか、元に戻してください。");
+    }
+    let (c, t, _) = commit_and_parent_trees(&repo, id)?;
+    let head = repo.head()?.peel_to_commit()?;
+    if head.tree_id() == t.id() {
+        return user("すでにこの時点と同じ状態です");
+    }
+    let mut co = CheckoutBuilder::new();
+    co.force();
+    repo.checkout_tree(t.as_object(), Some(&mut co))?;
+    let mut index = repo.index()?;
+    index.read_tree(&t)?;
+    index.write()?;
+    let when = c.time().seconds();
+    let label = c.message().unwrap_or_default().lines().next().unwrap_or_default().to_string();
+    let sig = signature(&repo, login)?;
+    let msg = format!("「{label}」の時点に戻す\n\n戻した先: {} ({when})", &id[..id.len().min(7)]);
+    let new = repo.commit(Some("HEAD"), &sig, &sig, &msg, &t, &[&head])?;
+    Ok(new.to_string())
 }

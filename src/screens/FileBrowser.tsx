@@ -5,9 +5,14 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { baseName, Change, Entry, fmtSize, fmtTime, fsApi, join, parentOf, sep } from "../api";
 import { CHANGE_LABEL } from "../terms";
 import Preview from "./Preview";
+import ColumnTable from "./ColumnTable";
+import { dragProps, dropInto, dropProps, dropTargetAt } from "../dnd";
+import { t , tErr } from "../i18n";
 
 // アプリ全体で共有するクリップボード
 let clipboard: { mode: "copy" | "cut"; paths: string[] } | null = null;
+/** 貼り付け中は次の貼り付けを受け付けない（二重に貼られるのを防ぐ） */
+let pasting = false;
 
 type Props = {
   /** 表示するフォルダ（変更されたら移動する） */
@@ -15,6 +20,10 @@ type Props = {
   onPathChange?: (p: string) => void;
   /** これより上には移動しない（プロジェクトのフォルダなど） */
   rootLimit?: string;
+  /** 自分の履歴がなくなった時の「戻る」と、rootLimit で「上へ」を押した時の行き先（外側の画面へ） */
+  outerBack?: () => void;
+  canOuterBack?: boolean;
+  outerUp?: () => void;
   /** アドレスバーの先頭に出す表示名（例：本体） */
   rootLabel?: React.ReactNode;
   /** Git の変更（root からの相対パス、/ 区切り） */
@@ -62,7 +71,7 @@ export default function FileBrowser(p: Props) {
       setEntries(list);
       if (!quiet) setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(tErr(e));
       setEntries([]);
     }
   }, [path, showHidden]);
@@ -82,7 +91,9 @@ export default function FileBrowser(p: Props) {
     const un = getCurrentWebview().onDragDropEvent(async (e) => {
       const pl = e.payload;
       if (pl.type !== "drop") return;
-      await act(() => fsApi.copy(pl.paths, pathRef.current));
+      // 落とした位置のフォルダ（ツリーや一覧のフォルダ）へ。何もない所なら今開いている場所へ
+      const dest = dropTargetAt(pl.position.x, pl.position.y) ?? pathRef.current;
+      await dropInto(dest, pl.paths, false);
     });
     return () => { un.then((f) => f()); };
   }, []);
@@ -97,11 +108,16 @@ export default function FileBrowser(p: Props) {
   };
   const up = () => {
     const par = parentOf(path);
-    if (par && (!p.rootLimit || path !== p.rootLimit)) go(par);
+    if (p.rootLimit && path === p.rootLimit) { p.outerUp?.(); return; }
+    if (par) go(par); else p.outerUp?.();
+  };
+  const goBackNav = () => {
+    if (!back.length) { if (p.canOuterBack) p.outerBack?.(); return; }
+    const b = back[back.length - 1]; setBack(back.slice(0, -1)); setFwd([path, ...fwd]); go(b, false);
   };
 
   const act = async (f: () => Promise<unknown>) => {
-    try { await f(); setError(null); } catch (e) { setError(String(e)); }
+    try { await f(); setError(null); } catch (e) { setError(tErr(e)); }
     await load(true);
     p.onMutate?.();
   };
@@ -143,26 +159,46 @@ export default function FileBrowser(p: Props) {
   // ---- 操作 ----
   const open = (e: Entry) => (e.is_dir ? go(e.path) : marks.get(rel(e.path) ?? "") === "deleted" ? null : act(() => fsApi.open(e.path)));
   const doCopy = (mode: "copy" | "cut") => { if (selected.length) { clipboard = { mode, paths: selected.map((e) => e.path) }; force((n) => n + 1); } };
-  const doPaste = (dest = path) => {
+  const doPaste = async (dest = path) => {
     const c = clipboard;
-    if (!c) return;
+    if (!c || pasting) return;
+    pasting = true;
     if (c.mode === "cut") clipboard = null;
-    return act(() => (c.mode === "copy" ? fsApi.copy(c.paths, dest) : fsApi.move(c.paths, dest)));
+    try { await act(() => (c.mode === "copy" ? fsApi.copy(c.paths, dest) : fsApi.move(c.paths, dest))); }
+    finally { pasting = false; }
   };
+  // 一覧の外（ツリーなど）にカーソルがあっても Ctrl+C / X / V が効くように
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyRef.current = (ev: KeyboardEvent) => {
+    const el = ev.target as HTMLElement;
+    if (renaming || el.closest(".browser") || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable) return;
+    if (!(ev.ctrlKey || ev.metaKey) || ev.repeat) return;
+    const k = ev.key.toLowerCase();
+    if (k === "v") { ev.preventDefault(); doPaste(); }
+    else if (k === "c") doCopy("copy");
+    else if (k === "x") doCopy("cut");
+  };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => keyRef.current(e);
+    const r = () => { load(true); p.onMutate?.(); };
+    window.addEventListener("keydown", h);
+    window.addEventListener("mao:fs-changed", r);
+    return () => { window.removeEventListener("keydown", h); window.removeEventListener("mao:fs-changed", r); };
+  }, []);
   const doDelete = () => {
     if (!selected.length) return;
-    const msg = selected.length === 1 ? `「${selected[0].name}」をごみ箱へ移動しますか？` : `${selected.length} 個の項目をごみ箱へ移動しますか？`;
+    const msg = selected.length === 1 ? t("「{0}」をごみ箱へ移動しますか？", [selected[0].name]) : t("{0} 個の項目をごみ箱へ移動しますか？", [selected.length]);
     if (window.confirm(msg)) act(() => fsApi.remove(selected.map((e) => e.path)));
   };
   const createNew = async (kind: "folder" | "text") => {
     setNewMenu(false);
     try {
-      const created = kind === "folder" ? await fsApi.newFolder(path, "新しいフォルダー") : await fsApi.newFile(path, "新しいテキスト ドキュメント.txt");
+      const created = kind === "folder" ? await fsApi.newFolder(path, t("新しいフォルダー")) : await fsApi.newFile(path, t("新しいテキスト ドキュメント.txt"));
       await load(true);
       p.onMutate?.();
       setSel(new Set([created]));
       setRenaming(created);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(tErr(e)); }
   };
   const commitRename = (e: Entry, name: string) => {
     setRenaming(null);
@@ -192,7 +228,7 @@ export default function FileBrowser(p: Props) {
     else if (mod && k === "a") { ev.preventDefault(); setSel(new Set(shown.map((e) => e.path))); }
     else if (mod && k === "c") doCopy("copy");
     else if (mod && k === "x") doCopy("cut");
-    else if (mod && k === "v") doPaste();
+    else if (mod && k === "v") { if (!ev.repeat) doPaste(); }
     else if (mod && ev.shiftKey && k === "n") { ev.preventDefault(); createNew("folder"); }
     else if (k === "delete") doDelete();
     else if (k === "f2" && selected.length === 1) setRenaming(selected[0].path);
@@ -235,6 +271,8 @@ export default function FileBrowser(p: Props) {
       onClick: (ev: React.MouseEvent) => { ev.stopPropagation(); click(ev, e); },
       onDoubleClick: () => open(e),
       onContextMenu: (ev: React.MouseEvent) => { ev.preventDefault(); ev.stopPropagation(); if (!sel.has(e.path)) setSel(new Set([e.path])); setMenu({ x: ev.clientX, y: ev.clientY, target: e }); },
+      ...(m === "deleted" ? {} : dragProps(() => (sel.has(e.path) ? [...sel] : [e.path]), () => (sel.has(e.path) && sel.size > 1 ? t("{0} 個の項目", [sel.size]) : e.name))),
+      ...(e.is_dir && m !== "deleted" ? dropProps(e.path) : {}),
     };
   };
   const nameOf = (e: Entry) => renaming === e.path
@@ -247,10 +285,10 @@ export default function FileBrowser(p: Props) {
   return (
     <div className="browser" onKeyDown={key}>
       <div className="navbar">
-        <button className="icon" title="戻る" disabled={!back.length} onClick={() => { const b = back[back.length - 1]; setBack(back.slice(0, -1)); setFwd([path, ...fwd]); go(b, false); }}>←</button>
-        <button className="icon" title="進む" disabled={!fwd.length} onClick={() => { const f = fwd[0]; setFwd(fwd.slice(1)); setBack([...back, path]); go(f, false); }}>→</button>
-        <button className="icon" title="上へ（Backspace）" onClick={up} disabled={!!p.rootLimit && path === p.rootLimit}>↑</button>
-        <button className="icon" title="最新の情報に更新（F5）" onClick={() => load()}>↻</button>
+        <button className="icon" title={t("戻る")} disabled={!back.length && !p.canOuterBack} onClick={goBackNav}>←</button>
+        <button className="icon" title={t("進む")} disabled={!fwd.length} onClick={() => { const f = fwd[0]; setFwd(fwd.slice(1)); setBack([...back, path]); go(f, false); }}>→</button>
+        <button className="icon" title={t("上へ（Backspace）")} onClick={up} disabled={!!p.rootLimit && path === p.rootLimit && !p.outerUp}>↑</button>
+        <button className="icon" title={t("最新の情報に更新（F5）")} onClick={() => load()}>↻</button>
         {addr === null ? (
           <div className="address" onClick={() => !p.rootLimit && setAddr(path)}>
             {crumbs.map((c, i) => (
@@ -258,77 +296,64 @@ export default function FileBrowser(p: Props) {
                 <span className="crumb" onClick={(ev) => { ev.stopPropagation(); go(c.to); }}>{c.label}</span>
               </span>
             ))}
+            {p.rootLimit && (
+              <span className="addr-path" title={t("クリックでエクスプローラーで開く")}
+                onClick={(ev) => { ev.stopPropagation(); fsApi.reveal(path); }}>📂 {path}</span>
+            )}
           </div>
         ) : (
           <input className="address" autoFocus value={addr} onChange={(e) => setAddr(e.target.value)}
             onBlur={() => setAddr(null)}
             onKeyDown={(e) => { if (e.key === "Enter") { go(addr); setAddr(null); } if (e.key === "Escape") setAddr(null); }} />
         )}
-        <input className="search" placeholder={`🔍 ${baseName(path) || path} の中を絞り込み`} value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <input className="search" placeholder={t("🔍 {0} の中を絞り込み", [baseName(path) || path])} value={filter} onChange={(e) => setFilter(e.target.value)} />
       </div>
 
       <div className="commandbar">
         <div className="dropdown">
-          <button onClick={(e) => { e.stopPropagation(); setNewMenu(!newMenu); }}>⊕ 新規作成 ▾</button>
+          <button onClick={(e) => { e.stopPropagation(); setNewMenu(!newMenu); }}>{t("⊕ 新規作成 ▾")}</button>
           {newMenu && (
             <div className="menu" style={{ top: "100%", left: 0 }}>
-              <div onClick={() => createNew("folder")}>📁 フォルダー</div>
-              <div onClick={() => createNew("text")}>📄 テキスト ドキュメント</div>
+              <div onClick={() => createNew("folder")}>{t("📁 フォルダー")}</div>
+              <div onClick={() => createNew("text")}>{t("📄 テキスト ドキュメント")}</div>
             </div>
           )}
         </div>
         <span className="sep" />
-        <button className="icon" title="切り取り（Ctrl+X）" disabled={!selected.length} onClick={() => doCopy("cut")}>✂</button>
-        <button className="icon" title="コピー（Ctrl+C）" disabled={!selected.length} onClick={() => doCopy("copy")}>⧉</button>
-        <button className="icon" title="貼り付け（Ctrl+V）" disabled={!clipboard} onClick={() => doPaste()}>📋</button>
-        <button className="icon" title="名前の変更（F2）" disabled={selected.length !== 1} onClick={() => setRenaming(selected[0].path)}>✏</button>
-        <button className="icon" title="削除（Delete）" disabled={!selected.length} onClick={doDelete}>🗑</button>
+        <button className="icon" title={t("切り取り（Ctrl+X）")} disabled={!selected.length} onClick={() => doCopy("cut")}>✂</button>
+        <button className="icon" title={t("コピー（Ctrl+C）")} disabled={!selected.length} onClick={() => doCopy("copy")}>⧉</button>
+        <button className="icon" title={t("貼り付け（Ctrl+V）")} disabled={!clipboard} onClick={() => doPaste()}>📋</button>
+        <button className="icon" title={t("名前の変更（F2）")} disabled={selected.length !== 1} onClick={() => setRenaming(selected[0].path)}>✏</button>
+        <button className="icon" title={t("削除（Delete）")} disabled={!selected.length} onClick={doDelete}>🗑</button>
         <span className="sep" />
         <label className="check"><input type="checkbox" checked={showHidden}
-          onChange={(e) => { setShowHidden(e.target.checked); localStorage.setItem("mao.hidden", e.target.checked ? "1" : "0"); }} /> 隠しファイル</label>
+          onChange={(e) => { setShowHidden(e.target.checked); localStorage.setItem("mao.hidden", e.target.checked ? "1" : "0"); }} /> {t("隠しファイル")}</label>
         {p.extraTools && <><span className="sep" />{p.extraTools}</>}
         <span className="grow" />
-        <button className={"icon" + (preview ? " on" : "")} title="プレビュー ウィンドウ（Alt+P）" onClick={togglePreview}>👁 プレビュー</button>
-        <div className="viewsw" title="表示方法">
-          <button className={"icon" + (view === "details" ? " on" : "")} title="詳細" onClick={() => changeView("details")}>☰</button>
-          <button className={"icon" + (view === "medium" ? " on" : "")} title="中アイコン" onClick={() => changeView("medium")}>▦</button>
-          <button className={"icon" + (view === "large" ? " on" : "")} title="大アイコン" onClick={() => changeView("large")}>⬜</button>
+        <button className={"icon" + (preview ? " on" : "")} title={t("プレビュー ウィンドウ（Alt+P）")} onClick={togglePreview}>{t("👁 プレビュー")}</button>
+        <div className="viewsw" title={t("表示方法")}>
+          <button className={"icon" + (view === "details" ? " on" : "")} title={t("詳細")} onClick={() => changeView("details")}>☰</button>
+          <button className={"icon" + (view === "medium" ? " on" : "")} title={t("中アイコン")} onClick={() => changeView("medium")}>▦</button>
+          <button className={"icon" + (view === "large" ? " on" : "")} title={t("大アイコン")} onClick={() => changeView("large")}>⬜</button>
         </div>
       </div>
 
       {error && <div className="banner error">{error}<button className="small" onClick={() => setError(null)}>×</button></div>}
 
       <div className="body-row">
-      <div className="files-scroll" ref={listRef} tabIndex={0}
+      <div className="files-scroll" ref={listRef} tabIndex={0} {...dropProps(path)}
         onClick={(e) => { if (e.target === e.currentTarget) setSel(new Set()); }}
         onContextMenu={(e) => { e.preventDefault(); if (e.target === e.currentTarget) { setSel(new Set()); setMenu({ x: e.clientX, y: e.clientY, target: null }); } }}>
         {view === "details" ? (
-        <table className="list">
-          <thead>
-            <tr>
-              <th onClick={() => sortBy("name")}>名前{arrow("name")}</th>
-              <th onClick={() => sortBy("modified")}>更新日時{arrow("modified")}</th>
-              <th onClick={() => sortBy("size")} className="num">サイズ{arrow("size")}</th>
-              {p.gitRoot && <th>状態</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((e) => {
-              const m = markOf(e);
-              return (
-                <tr key={e.path} {...itemProps(e, m)}>
-                  <td className="name">
-                    <span className="ficon">{e.is_dir ? "📁" : icon(e.name)}</span>
-                    {nameOf(e)}
-                  </td>
-                  <td className="muted">{fmtTime(e.modified)}</td>
-                  <td className="muted num">{e.is_dir ? "" : fmtSize(e.size)}</td>
-                  {p.gitRoot && <td>{m && <span className={`mark ${m}`}>● {CHANGE_LABEL[m] ?? m}</span>}</td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <ColumnTable rows={shown} rowKey={(e) => e.path} storageKey={p.gitRoot ? "mao.fileCols.git" : "mao.fileCols"}
+          rowProps={(e) => itemProps(e, markOf(e))}
+          columns={[
+            { id: "name", label: <>{t("名前")}{arrow("name")}</>, width: 360, className: "name", onHeader: () => sortBy("name"), title: (e) => e.name,
+              cell: (e) => <><span className="ficon">{e.is_dir ? "📁" : icon(e.name)}</span>{nameOf(e)}</> },
+            { id: "modified", label: <>{t("更新日時")}{arrow("modified")}</>, width: 170, className: "muted", onHeader: () => sortBy("modified"), cell: (e) => fmtTime(e.modified) },
+            { id: "size", label: <>{t("サイズ")}{arrow("size")}</>, width: 100, className: "muted num", onHeader: () => sortBy("size"), cell: (e) => (e.is_dir ? "" : fmtSize(e.size)) },
+            ...(p.gitRoot ? [{ id: "state", label: t("状態"), width: 110, cell: (e: Entry) => { const m = markOf(e); return m ? <span className={`mark ${m}`}>● {CHANGE_LABEL[m] ?? m}</span> : <span className="mark ok" title={t("クラウドと同じ内容です")}>✓</span>; } }] : []),
+          ]} />
         ) : (
           <div className={`tiles ${view}`}>
             {shown.map((e) => {
@@ -343,8 +368,8 @@ export default function FileBrowser(p: Props) {
             })}
           </div>
         )}
-        {entries && shown.length === 0 && <p className="muted empty">{filter ? "一致する項目はありません" : "このフォルダーは空です"}</p>}
-        {!entries && <p className="muted empty">読み込み中…</p>}
+        {entries && shown.length === 0 && <p className="muted empty">{filter ? t("一致する項目はありません") : t("このフォルダーは空です")}</p>}
+        {!entries && <p className="muted empty">{t("読み込み中…")}</p>}
       </div>
 
       {preview && <Preview entry={selected.length === 1 ? selected[0] : null} count={selected.length}
@@ -352,7 +377,7 @@ export default function FileBrowser(p: Props) {
       </div>
 
       <div className="statusbar">
-        {shown.length} 個の項目{selected.length ? `　${selected.length} 個を選択` : ""}
+        {t("{0} 個の項目", [shown.length])}{selected.length ? t("　{0} 個を選択", [selected.length]) : ""}
         {selected.length === 1 && !selected[0].is_dir ? `　${fmtSize(selected[0].size)}` : ""}
         {p.extraStatus && <>　｜　{p.extraStatus}</>}
       </div>
@@ -361,30 +386,30 @@ export default function FileBrowser(p: Props) {
         <div className="menu" style={{ top: menu.y, left: menu.x, position: "fixed" }} onClick={(e) => e.stopPropagation()}>
           {menu.target ? (
             <>
-              <div onClick={() => { setMenu(null); open(menu.target!); }}><b>開く</b></div>
+              <div onClick={() => { setMenu(null); open(menu.target!); }}><b>{t("開く")}</b></div>
               <hr />
-              <div onClick={() => { setMenu(null); doCopy("cut"); }}>✂ 切り取り</div>
-              <div onClick={() => { setMenu(null); doCopy("copy"); }}>⧉ コピー</div>
-              {menu.target.is_dir && clipboard && <div onClick={() => { setMenu(null); doPaste(menu.target!.path); }}>📋 このフォルダーに貼り付け</div>}
-              <div className={selected.length !== 1 ? "disabled" : ""} onClick={() => { setMenu(null); selected.length === 1 && setRenaming(selected[0].path); }}>✏ 名前の変更</div>
-              <div onClick={() => { setMenu(null); doDelete(); }}>🗑 削除</div>
+              <div onClick={() => { setMenu(null); doCopy("cut"); }}>{t("✂ 切り取り")}</div>
+              <div onClick={() => { setMenu(null); doCopy("copy"); }}>{t("⧉ コピー")}</div>
+              {menu.target.is_dir && clipboard && <div onClick={() => { setMenu(null); doPaste(menu.target!.path); }}>{t("📋 このフォルダーに貼り付け")}</div>}
+              <div className={selected.length !== 1 ? "disabled" : ""} onClick={() => { setMenu(null); selected.length === 1 && setRenaming(selected[0].path); }}>{t("✏ 名前の変更")}</div>
+              <div onClick={() => { setMenu(null); doDelete(); }}>{t("🗑 削除")}</div>
               <hr />
-              <div onClick={() => { setMenu(null); navigator.clipboard.writeText(selected.map((e) => e.path).join("\n")); }}>パスのコピー</div>
-              <div onClick={() => { setMenu(null); fsApi.reveal(menu.target!.path); }}>OSのファイラーで表示</div>
+              <div onClick={() => { setMenu(null); navigator.clipboard.writeText(selected.map((e) => e.path).join("\n")); }}>{t("パスのコピー")}</div>
+              <div onClick={() => { setMenu(null); fsApi.reveal(menu.target!.path); }}>{t("OSのファイラーで表示")}</div>
             </>
           ) : (
             <>
-              <div onClick={() => { setMenu(null); createNew("folder"); }}>📁 新しいフォルダー</div>
-              <div onClick={() => { setMenu(null); createNew("text"); }}>📄 新しいテキスト ドキュメント</div>
+              <div onClick={() => { setMenu(null); createNew("folder"); }}>{t("📁 新しいフォルダー")}</div>
+              <div onClick={() => { setMenu(null); createNew("text"); }}>{t("📄 新しいテキスト ドキュメント")}</div>
               <hr />
-              <div className={!clipboard ? "disabled" : ""} onClick={() => { setMenu(null); doPaste(); }}>📋 貼り付け</div>
-              <div onClick={() => { setMenu(null); load(); }}>↻ 最新の情報に更新</div>
+              <div className={!clipboard ? "disabled" : ""} onClick={() => { setMenu(null); doPaste(); }}>{t("📋 貼り付け")}</div>
+              <div onClick={() => { setMenu(null); load(); }}>{t("↻ 最新の情報に更新")}</div>
               <hr />
-              <div onClick={() => { setMenu(null); changeView("large"); }}>{view === "large" ? "✔" : "　"} 大アイコン</div>
-              <div onClick={() => { setMenu(null); changeView("medium"); }}>{view === "medium" ? "✔" : "　"} 中アイコン</div>
-              <div onClick={() => { setMenu(null); changeView("details"); }}>{view === "details" ? "✔" : "　"} 詳細</div>
+              <div onClick={() => { setMenu(null); changeView("large"); }}>{view === "large" ? "✔" : "　"} {t("大アイコン")}</div>
+              <div onClick={() => { setMenu(null); changeView("medium"); }}>{view === "medium" ? "✔" : "　"} {t("中アイコン")}</div>
+              <div onClick={() => { setMenu(null); changeView("details"); }}>{view === "details" ? "✔" : "　"} {t("詳細")}</div>
               <hr />
-              <div onClick={() => { setMenu(null); fsApi.reveal(path); }}>OSのファイラーで表示</div>
+              <div onClick={() => { setMenu(null); fsApi.reveal(path); }}>{t("OSのファイラーで表示")}</div>
             </>
           )}
         </div>

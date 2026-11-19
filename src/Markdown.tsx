@@ -4,6 +4,7 @@ import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { t } from "./i18n";
 
 export const isMarkdown = (name: string) => /\.(md|markdown|mdx)$/i.test(name) || /^readme$/i.test(name);
 
@@ -47,8 +48,8 @@ export function MarkdownToggle({ text, baseDir, source }: { text: string; baseDi
   return (
     <>
       <div className="preview-tabs">
-        <button className={"small" + (!raw ? " on" : "")} onClick={() => setRaw(false)}>表示</button>
-        <button className={"small" + (raw ? " on" : "")} onClick={() => setRaw(true)}>ソース</button>
+        <button className={"small" + (!raw ? " on" : "")} onClick={() => setRaw(false)}>{t("表示")}</button>
+        <button className={"small" + (raw ? " on" : "")} onClick={() => setRaw(true)}>{t("ソース")}</button>
       </div>
       {raw ? source : <Markdown text={text} baseDir={baseDir} />}
     </>

@@ -1,9 +1,10 @@
 import { Place } from "../api";
+import { t, tPlace } from "../i18n";
 
 const GROUPS: { kind: Place["kind"]; title: string; icon: string }[] = [
-  { kind: "quick", title: "よく使うフォルダー", icon: "📁" },
-  { kind: "drive", title: "ドライブ", icon: "💽" },
-  { kind: "nas", title: "NAS（ネットワーク）", icon: "🗄" },
+  { kind: "quick", title: t("よく使うフォルダー"), icon: "📁" },
+  { kind: "drive", title: t("ドライブ"), icon: "💽" },
+  { kind: "nas", title: t("NAS（ネットワーク）"), icon: "🗄" },
   { kind: "onedrive", title: "OneDrive", icon: "☁" },
   { kind: "gdrive", title: "Google Drive", icon: "☁" },
 ];
@@ -25,7 +26,7 @@ export default function PcView({ places, nas, onOpen }: { places: Place[]; nas: 
                 {items.map((p) => (
                   <div key={p.path} className="tile" title={p.path} onDoubleClick={() => onOpen(p.path)} onClick={() => onOpen(p.path)}>
                     <div className="tile-icon">{g.icon}</div>
-                    <div className="tile-name">{p.name}</div>
+                    <div className="tile-name">{tPlace(p.name)}</div>
                   </div>
                 ))}
               </div>
@@ -33,7 +34,7 @@ export default function PcView({ places, nas, onOpen }: { places: Place[]; nas: 
           );
         })}
       </div>
-      <div className="statusbar">{all.length} 個の場所</div>
+      <div className="statusbar">{t("{0} 個の場所", [all.length])}</div>
     </>
   );
 }

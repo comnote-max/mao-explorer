@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
+import { LOCALE } from "./i18n";
 
 export type Access = "read" | "write" | "admin";
 export type Project = {
   full_name: string; name: string; owner: string; private: boolean; description: string | null;
-  default_branch: string; access: Access; updated_at: string; synced: boolean; root: string | null;
+  default_branch: string; access: Access; updated_at: string; synced: boolean; root: string | null; main: string | null;
 };
 export type RemoteEntry = { name: string; path: string; is_dir: boolean; size: number };
 export type FolderState = { changes: number; ahead: number; behind: number; unpublished: boolean; not_in_main: number };
@@ -51,6 +52,9 @@ export const parentOf = (p: string) => {
   const parent = t.slice(0, i);
   return parent.length === 2 && parent.endsWith(":") ? parent + sep : parent || "/";
 };
+/** 日本語名は説明の先頭【…】に入れておく（GitHub の名前は英数字しか使えないため） */
+export const dispName = (p: { name: string; description?: string | null }) => p.description?.match(/^【(.+?)】/)?.[1] ?? p.name;
+export const dispDesc = (p: { description?: string | null }) => (p.description ?? "").replace(/^【.+?】\s*/, "");
 export const baseName = (p: string) => p.split(sep).filter(Boolean).pop() ?? p;
 
 export const api = {
@@ -70,11 +74,19 @@ export const api = {
     invoke<string | null>("read_remote", { fullName, path, gitRef }),
   readme: (fullName: string) => invoke<string | null>("readme", { fullName }),
   defaultRoot: (name: string) => invoke<string>("default_root", { name }),
+  masterDir: () => invoke<string>("master_dir"),
+  setMasterDir: (dir: string) => invoke<void>("set_master_dir", { dir }),
+  openInDesktop: (path: string) => invoke<boolean>("open_in_desktop", { path }),
   firstSync: (fullName: string, defaultBranch: string, root: string) =>
     invoke<string>("first_sync", { fullName, defaultBranch, root }),
   folders: (fullName: string) => invoke<Folder[]>("folders", { fullName }),
   removeFolder: (fullName: string, folder: string, remote: boolean) => invoke<void>("remove_folder", { fullName, folder, remote }),
-  createFolder: (fullName: string, name: string, from?: string) => invoke<Folder>("create_folder", { fullName, name, from: from ?? null }),
+  createFolder: (fullName: string, name: string, from?: string, at?: string) => invoke<Folder>("create_folder", { fullName, name, from: from ?? null, at: at ?? null }),
+  history: (folder: string) => invoke<HistoryEntry[]>("history", { folder }),
+  historyFiles: (folder: string, id: string) => invoke<Change[]>("history_files", { folder, id }),
+  historyDiff: (folder: string, id: string, rel: string) => invoke<string | null>("history_diff", { folder, id, rel }),
+  restoreFile: (folder: string, id: string, rel: string) => invoke<void>("restore_file", { folder, id, rel }),
+  restoreAll: (folder: string, id: string) => invoke<string>("restore_all", { folder, id }),
   listLocal: (folder: string, rel: string) => invoke<LocalEntry[]>("list_local", { folder, rel }),
   fileDiff: (folder: string, rel: string) => invoke<string | null>("file_diff", { folder, rel }),
   changes: (folder: string) => invoke<Change[]>("changes", { folder }),
@@ -94,7 +106,8 @@ export const api = {
 
 export const fmtSize = (n: number) =>
   n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
-export const fmtTime = (s: number | null) => (s ? new Date(s * 1000).toLocaleString("ja-JP") : "");
+export const fmtTime = (s: number | null) => (s ? new Date(s * 1000).toLocaleString(LOCALE) : "");
 
 export type Member = { login: string; avatar_url: string; role: string };
 export type Invite = { id: number; login: string; avatar_url: string; role: string };
+export type HistoryEntry = { id: string; message: string; author: string; time: number; local_only: boolean };
