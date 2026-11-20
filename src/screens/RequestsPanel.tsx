@@ -67,12 +67,13 @@ export default function RequestsPanel({ project, requests, canMerge, onClose, on
                   </details>
                 ))}
               </div>
+              {sel.draft && <p className="muted">{t("この依頼は依頼者がまだ「作成中」にしているため、反映できません。依頼者が GitHub で「Ready for review」にすると反映できます。")}</p>}
               {err && <p className="error">{err}</p>}
               <div className="actions">
                 <a className="muted small-text" href={sel.url} target="_blank" rel="noreferrer">{t("GitHubで見る")}</a>
                 <span className="grow" />
                 {!sel.mine && <button title={HELP.requestChanges} onClick={() => setAsking(true)} disabled={busy}>{T.requestChanges}</button>}
-                {canMerge && <button className="primary" title={HELP.merge} onClick={() => setConfirming(true)} disabled={busy}>{busy ? t("反映中…") : `⤴ ${T.merge}`}</button>}
+                {canMerge && <button className="primary" title={HELP.merge} onClick={() => setConfirming(true)} disabled={busy || sel.draft}>{busy ? t("反映中…") : `⤴ ${T.merge}`}</button>}
               </div>
             </div>
           )}

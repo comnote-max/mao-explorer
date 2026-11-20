@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, Capability, Change, Folder, MergeView, Project, Request } from "../api";
+import { api, Capability, Change, Folder, MergeView, Project, Request, sep, touched } from "../api";
 import { CHANGE_LABEL, HELP, T } from "../terms";
 import { copyNumbers, copyText, CopyTag } from "../copyNo";
 import FileBrowser from "./FileBrowser";
@@ -11,6 +11,7 @@ import { t, LOCALE, tErr, classic } from "../i18n";
 
 type Dialog = null | "save" | "newFolder" | "request" | "requests" | "history" | "merge";
 
+const AUTO_MAX = 30; // これを超える変更は自動で送らない
 const seenKey = (fn: string) => `mao.seenRequests.${fn}`;
 const loadSeen = (fn: string): number[] => {
   try { return JSON.parse(localStorage.getItem(seenKey(fn)) ?? "[]"); } catch { return []; }
@@ -112,6 +113,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   const doSync = () => { setPaused(false); return doSync0(); };
   const doSync0 = () => protectedMain && (changes.length > 0 || !!folder?.state.ahead) ? moveToDraft() : run(T.sync, async () => {
     if (!folder) return;
+    if (changes.length > AUTO_MAX && !window.confirm(t("変更が {0} 件あります（例：{1}）。\n\n作業用の一時ファイルなどが混ざっていないか確認してください。本当に全部クラウドへ送りますか？", [changes.length, changes.slice(0, 5).map((c) => c.path).join("、")]))) return;
     if (changes.length > 0) await api.save(folder.path, autoMessage(changes), []);
     const r = await api.sync(folder.path);
     if (r.result === "need_save") {
@@ -145,15 +147,30 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
     : received > 0 ? t("☁ クラウドから {0} 件の更新を受け取りました。", [received])
     : t("✔ クラウドと同じ状態です。");
   // モダン：編集が落ち着いたら（20秒変更がなければ）自動で同期する。ボタンを押さなくてもクラウドへ送られる
-  const changeSig = changes.map((c) => c.path + c.kind).join("|");
+  // 自動で送るのは、このアプリから開いた・作った・動かしたファイルの変更だけ。
+  // ほかのツールが作った一時ファイルや、開く前から書きかけで置いてある変更は送らない（同期ボタンで送れる）
+  const absOf = (rel: string) => folder ? folder.path + sep + rel.split("/").join(sep) : rel;
+  const mine = changes.filter((c) => { const a = absOf(c.path); for (const p of touched) if (a === p || a.startsWith(p + sep)) return true; return false; });
+  const others = changes.length - mine.length;
+  const changeSig = mine.map((c) => c.path + c.kind).join("|");
   const [paused, setPaused] = useState(false); // 「今は送らない」：次に自分で同期するまで自動では送らない
   const [dueAt, setDueAt] = useState<number | null>(null);
   const [, setNow] = useState(0);
-  const autoOn = !classic && !!folder && !protectedMain && changes.length > 0 && !busy && !dialog && message?.kind !== "error" && !paused;
+  // 変更が多すぎるときは念のため自動では送らない
+  const tooMany = mine.length > AUTO_MAX;
+  const autoOn = !classic && !!folder && !protectedMain && mine.length > 0 && !tooMany && !busy && !dialog && message?.kind !== "error" && !paused;
+  const doAutoSync = () => run(T.sync, async () => {
+    if (!folder || !mine.length) return;
+    await api.save(folder.path, autoMessage(mine), mine.map((c) => c.path));
+    // ほかの変更が残っていると取り込み（pull）ができないので、送るだけにする
+    const r = others > 0 ? await api.push(folder.path).catch((e) => { throw new Error(t("クラウドに新しい更新があるため、自動では送れませんでした。「⟳ 同期」を押してください。") + "\n" + tErr(e)); }) : await api.sync(folder.path);
+    if (r.result === "conflict") setMessage({ kind: "error", text: t("{0}：クラウド側と同じ箇所が変更されています（{1}）。あなたの変更はそのまま残しています。", [T.attention, r.files.join("、")]) });
+    else if (r.result === "done") setMessage(sentMessage(r.sent, r.received));
+  });
   useEffect(() => {
     if (!autoOn) { setDueAt(null); return; }
     setDueAt(Date.now() + 20_000);
-    const h = window.setTimeout(() => doSync(), 20_000);
+    const h = window.setTimeout(() => doAutoSync(), 20_000);
     const tk = window.setInterval(() => setNow(Date.now()), 1000);
     return () => { window.clearTimeout(h); window.clearInterval(tk); };
   }, [changeSig, folder?.path, autoOn]);
@@ -203,7 +220,13 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   const cloudState = !st ? { kind: "", text: "", tip: "" }
     : nChanges > 0 && protectedMain ? { kind: "warn", text: t("● 変更 {0} 件（反映依頼が必要）", [nChanges]), tip: t("このチームの本体は直接変更できません。「⟳ 同期」を押すと、変更を下書きに移して反映依頼の画面を開きます。") }
     : nChanges > 0 && !classic && paused ? { kind: "warn", text: t("● 変更 {0} 件（自動送信を止めています）", [nChanges]), tip: t("「⟳ 同期」を押すと送ります。押すと自動送信も再開します。") }
-    : nChanges > 0 && !classic ? { kind: "warn", text: secLeft !== null ? t("● 変更 {0} 件（{1} 秒後に自動で送ります）", [nChanges, secLeft]) : t("● 変更 {0} 件（まもなく自動で送ります）", [nChanges]), tip: t("編集が落ち着くと自動でクラウドへ送ります。すぐ送りたいときは「⟳ 同期」を押してください。") }
+    : nChanges > 0 && !classic ? { kind: "warn", text: secLeft !== null ? t("● 変更 {0} 件（{1} 秒後に自動で送ります）", [mine.length, secLeft]) + (others ? t("・ほか {0} 件は送りません", [others]) : "")
+      : tooMany ? t("● 変更 {0} 件（多いため自動では送りません）", [nChanges])
+      : mine.length ? t("● 変更 {0} 件（まだ送っていません）", [nChanges])
+      : t("● 送っていない変更 {0} 件（自動では送りません）", [nChanges]),
+      tip: others && !mine.length
+        ? t("このアプリから開いていないファイルの変更です（書きかけや、ほかのアプリが作ったファイルなど）。送ってよければ「⟳ 同期」を押してください。")
+        : t("このアプリから開いて保存したファイルは、編集が落ち着くと自動でクラウドへ送ります。すぐ送りたいときは「⟳ 同期」を押してください。") }
     : nChanges > 0 ? { kind: "warn", text: t("● まだ送っていない変更 {0} 件", [nChanges]), tip: t("この変更はまだこのPCの中だけです。「⟳ 同期」でクラウドへ送ります。") }
     : st.unpublished && !st.ahead && st.not_in_main === 0 ? { kind: "ok", text: t("● 変更なし"), tip: t("まだ何も変更していないので、送るものはありません。") }
     : st.ahead || st.unpublished ? { kind: "warn", text: t("● まだクラウドへ送っていません"), tip: t("このPCには記録しましたが、クラウドへはまだ送っていません。「⟳ 同期」で送ります。") }
@@ -247,7 +270,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
         </button>)}
       </>, slot)}
       {classic && <button className={nChanges ? "primary" : ""} onClick={() => setDialog("save")} disabled={!!busy || !nChanges} title={HELP.commit}>📝 Commit…</button>}
-      <button onClick={() => setDialog("history")} disabled={!!busy || !folder} title={HELP.history}>{classic ? t("🕘 履歴") : t("🕘 以前の版に戻す")}</button>
+      <button onClick={() => setDialog("history")} disabled={!!busy || !folder} title={HELP.history}>{classic ? t("🕘 履歴") : t("🕘 以前のバージョンに戻す")}</button>
       {hasWork && cap?.mode === "request" && (
         <button className="primary" title={HELP.pullRequest} onClick={() => setDialog("request")} disabled={!!busy}>✉ {myRequest ? t("反映依頼中（追記）") : T.pullRequest}</button>
       )}
@@ -260,7 +283,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
       {incoming.length > 0 ? (
         <button className={unseen > 0 ? "blink" : ""} onClick={openRequests} title={HELP.incoming}>📨 {t("届いた依頼（{0}）", [incoming.length])}</button>
       ) : requests.length > 0 && (
-        <button onClick={openRequests} title={HELP.outgoing}>✉ {t("出した依頼（{0}）", [requests.length])}</button>
+        <button onClick={openRequests} title={HELP.outgoing}>✉ {t("反映依頼通知（{0}）", [requests.length])}</button>
       )}
     </div>
   );
@@ -274,8 +297,8 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
         {message.invite && <button className="primary small" onClick={() => window.dispatchEvent(new Event("mao:open-members"))}>👥 {t("人を招待する")}</button>}
         <button className="small" onClick={() => setMessage(null)}>×</button></div>}
       {folder.is_main && !classic && waiting.length > 0 && <div className="banner info">
-        ⏳ {t("確認待ちの変更があります（まだ{0}には入っていません）：", [T.mainBranch])}
-        {waiting.map((f) => <button key={f.path} className="small" onClick={() => pick(f.path)}>{t("下書き「{0}」を開く", [f.name])}</button>)}
+        ⏳ {t("{0}への反映待ち：", [T.mainBranch])}
+        {waiting.map((f) => <button key={f.path} className="small" onClick={() => pick(f.path)}>{t("「{0}」を開く", [f.name.length > 18 ? f.name.slice(0, 17) + "…" : f.name])}</button>)}
       </div>}
       <FileBrowser key={folder.path + "#" + rev}onSelect={(ps) => { selected.current = ps; }} path={path && isUnder(path, folder.path) ? path : folder.path} onPathChange={onPathChange} rootLimit={folder.path}
         canOuterBack={canBack} outerBack={onBack}

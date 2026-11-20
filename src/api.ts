@@ -29,17 +29,24 @@ export type MergeView =
 export type Place = { name: string; path: string; kind: "quick" | "drive" | "nas" | "onedrive" | "gdrive" };
 export type Entry = { name: string; path: string; is_dir: boolean; size: number; modified: number | null; hidden: boolean };
 
+/**
+ * このアプリから開いた・作った・名前変更・移動・削除したファイル（フルパス）。
+ * モダンの自動送信は、ここに載っているファイルの変更だけを送る（ほかのツールが作った一時ファイルや、書きかけで置いてある変更は送らない）。
+ */
+export const touched = new Set<string>();
+const touch = (p: string) => { touched.add(p); return p; };
+
 export const fsApi = {
   places: () => invoke<Place[]>("fs_places"),
   readText: (path: string) => invoke<string | null>("fs_read_text", { path }),
   list: (path: string, showHidden: boolean) => invoke<Entry[]>("fs_list", { path, showHidden }),
-  newFolder: (dir: string, name: string) => invoke<string>("fs_new_folder", { dir, name }),
-  newFile: (dir: string, name: string) => invoke<string>("fs_new_file", { dir, name }),
-  rename: (path: string, name: string) => invoke<string>("fs_rename", { path, name }),
-  remove: (paths: string[]) => invoke<void>("fs_delete", { paths }),
-  copy: (paths: string[], dest: string) => invoke<string[]>("fs_copy", { paths, dest }),
-  move: (paths: string[], dest: string) => invoke<string[]>("fs_move", { paths, dest }),
-  open: (path: string) => invoke<void>("fs_open", { path }),
+  newFolder: (dir: string, name: string) => invoke<string>("fs_new_folder", { dir, name }).then(touch),
+  newFile: (dir: string, name: string) => invoke<string>("fs_new_file", { dir, name }).then(touch),
+  rename: (path: string, name: string) => { touch(path); return invoke<string>("fs_rename", { path, name }).then(touch); },
+  remove: (paths: string[]) => { paths.forEach(touch); return invoke<void>("fs_delete", { paths }); },
+  copy: (paths: string[], dest: string) => invoke<string[]>("fs_copy", { paths, dest }).then((r) => (r.forEach(touch), r)),
+  move: (paths: string[], dest: string) => { paths.forEach(touch); return invoke<string[]>("fs_move", { paths, dest }).then((r) => (r.forEach(touch), r)); },
+  open: (path: string) => { touch(path); return invoke<void>("fs_open", { path }); },
   reveal: (path: string) => invoke<void>("fs_reveal", { path }),
 };
 

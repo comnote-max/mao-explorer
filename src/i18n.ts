@@ -103,6 +103,9 @@ const ERROR_PATTERNS = ERROR_KEYS.filter((k) => /\{\d+\}/.test(k)).map((k) => ({
 /** エラーなど、Rust 側から届いた文を訳す（知らない文はそのまま） */
 export function tErr(e: unknown): string {
   const s = String(e).replace(/^Error:\s*/, "");
+  // 別のアプリ（Git ツール・エディタなど）が同じフォルダの Git を使っている最中
+  if (/code=Locked/.test(s)) return t("ほかのアプリ（Git ツールなど）がこのフォルダを使っているため、今は同期できません。少し待ってからもう一度お試しください。");
+  if (/is still a draft/.test(s)) return t("この依頼は依頼者がまだ「作成中」にしているため、反映できません。依頼者が GitHub で「Ready for review」にすると反映できます。");
   if (ERROR_KEYS.includes(s)) return t(s);
   for (const p of ERROR_PATTERNS) {
     const m = p.re.exec(s);

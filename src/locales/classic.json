@@ -296,7 +296,7 @@
       "反映中…": "merge 中…",
       "反映操作はありません": "merge 操作はありません",
       "処理待ちの依頼はありません": "Open の Pull request はありません",
-      "出した依頼（{0}）": "自分の Pull request（{0}）",
+      "反映依頼通知（{0}）": "Pull requests（{0}）",
       "届いた依頼（{0}）": "レビュー待ちの Pull request（{0}）",
       "依頼を送信": "Create pull request",
       "依頼者": "author",
