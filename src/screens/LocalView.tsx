@@ -37,7 +37,8 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   const [requests, setRequests] = useState<Request[]>([]);
   const [mergeAfterSave, setMergeAfterSave] = useState(false);
   const [requestAfterSave, setRequestAfterSave] = useState(false);
-  const [seen, setSeen] = useState<number[]>(() => loadSeen(project.full_name));
+  const selected = useRef<string[]>([]);
+  const [seen, setSeen] =useState<number[]>(() => loadSeen(project.full_name));
 
   // ツリーで選ばれた場所から、どの（仮想）フォルダかを決める
   useEffect(() => {
@@ -47,7 +48,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   }, [path, folders]);
   const folder = folders?.find((f) => f.path === current) ?? folders?.[0];
   const nums = copyNumbers(project.full_name, (folders ?? []).filter((x) => !x.is_main).map((x) => x.name));
-  const tagOf = (f: Folder) => f.is_main ? <>🏠 {T.mainBranch}</> : <><CopyTag n={nums[f.name]} /> {f.name}</>;
+  const tagOf = (f: Folder) => f.is_main ? <>🏠 {T.mainBranch}</> : <><CopyTag n={nums[f.name]} /> {classic ? f.branch : f.name}</>;
   const pick = (p: string) => { setCurrent(p); onPathChange?.(p); };
 
   const loadFolders = useCallback(async () => {
@@ -274,7 +275,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
         ⏳ {t("確認待ちの変更があります（まだ{0}には入っていません）：", [T.mainBranch])}
         {waiting.map((f) => <button key={f.path} className="small" onClick={() => pick(f.path)}>{t("下書き「{0}」を開く", [f.name])}</button>)}
       </div>}
-      <FileBrowser key={folder.path} path={path && isUnder(path, folder.path) ? path : folder.path} onPathChange={onPathChange} rootLimit={folder.path}
+      <FileBrowser key={folder.path} onSelect={(ps) => { selected.current = ps; }} path={path && isUnder(path, folder.path) ? path : folder.path} onPathChange={onPathChange} rootLimit={folder.path}
         canOuterBack={canBack} outerBack={onBack}
         outerUp={() => { const m = folders?.find((f) => f.is_main); if (!folder.is_main && m) pick(m.path); else onUp?.(); }}
         rootLabel={tagOf(folder)}
@@ -283,7 +284,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
         onMutate={loadChanges} />
 
       {dialog === "history" && folder && (
-        <HistoryDialog folder={folder} label={tagOf(folder)} hasChanges={nChanges > 0} onClose={() => setDialog(null)}
+        <HistoryDialog folder={folder} prefer={selected.current[0] && isUnder(selected.current[0], folder.path) ? selected.current[0].slice(folder.path.length + 1).replace(/\\/g, "/") : undefined} label={tagOf(folder)} hasChanges={nChanges > 0} onClose={() => setDialog(null)}
           onDone={(text) => { setDialog(null); setMessage({ kind: "warn", text: text + t("　※まだこのPCの中だけです。「⟳ 同期」を押すとクラウドにも反映されます。") }); loadChanges(); loadFolders().catch(() => {}); }}
           onCopyFrom={async (id, name) => { setDialog(null); await run(T.createBranch, async () => { const f = await api.createFolder(project.full_name, name, folder.path, id); await loadFolders(); pick(f.path); }); }} />
       )}
@@ -415,7 +416,7 @@ function MergeDialog({ folder, base, commits, onClose, onOk }: { folder: Folder;
             <li>{t("未 push の commit は先に push します。merge 後、ローカルの main も pull します。", undefined, true)}</li>
           </ul>
         ) : (
-          <p className="muted">{t("下書き「{0}」の変更（{1} 回分の履歴保存）を本体に取り込みます。本体はほかの人にも見えている内容です。", [folder.name, commits])}</p>
+          <p className="muted">{t("下書き「{0}」の変更を本体に取り込みます。本体はほかの人にも見えている内容です。", [folder.name])}</p>
         )}
         <div className="actions">
           <button onClick={onClose}>{t("キャンセル")}</button>

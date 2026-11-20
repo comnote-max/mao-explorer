@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { api, Change, Folder, HistoryEntry } from "../api";
 import { CHANGE_LABEL, T } from "../terms";
 import { Diff } from "./Preview";
-import { t, LOCALE , tErr } from "../i18n";
+import { t, LOCALE , tErr, classic } from "../i18n";
 
 const when = (s: number) => new Date(s * 1000).toLocaleString(LOCALE);
 
 /** 🕘 履歴：履歴保存の一覧・中身の確認・巻き戻し。 */
-export default function HistoryDialog({ folder, label, hasChanges, onClose, onDone, onCopyFrom }: {
-  folder: Folder; label: React.ReactNode; hasChanges: boolean;
+export default function HistoryDialog({ folder, prefer, label, hasChanges, onClose, onDone, onCopyFrom }: {
+  folder: Folder; prefer?: string; label: React.ReactNode; hasChanges: boolean;
   onClose: () => void; onDone: (msg: string) => void; onCopyFrom: (id: string, name: string) => Promise<void>;
 }) {
   const [list, setList] = useState<HistoryEntry[] | null>(null);
@@ -20,11 +20,16 @@ export default function HistoryDialog({ folder, label, hasChanges, onClose, onDo
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    api.history(folder.path).then((l) => { setList(l); setSel(l[0] ?? null); }).catch((e) => setErr(tErr(e)));
+    // 一覧で選んでいたファイルがあれば、そのファイルが変わった一番新しい時点を最初に選ぶ
+    api.history(folder.path).then(async (l) => {
+      setList(l);
+      if (prefer) for (const h of l) { const fs = await api.historyFiles(folder.path, h.id).catch(() => [] as Change[]); if (fs.some((x) => x.path === prefer)) { setSel(h); return; } }
+      setSel(l[0] ?? null);
+    }).catch((e) => setErr(tErr(e)));
   }, [folder.path]);
   useEffect(() => {
     setFiles(null); setFile(null);
-    if (sel) api.historyFiles(folder.path, sel.id).then((f) => { setFiles(f); setFile(f[0]?.path ?? null); }).catch((e) => setErr(tErr(e)));
+    if (sel) api.historyFiles(folder.path, sel.id).then((f) => { setFiles(f); setFile(f.find((x) => x.path === prefer)?.path ?? f[0]?.path ?? null); }).catch((e) => setErr(tErr(e)));
   }, [sel?.id]);
   useEffect(() => {
     setDiff(undefined);
@@ -71,7 +76,7 @@ export default function HistoryDialog({ folder, label, hasChanges, onClose, onDo
             {!list && <p className="muted">{t("読み込み中…")}</p>}
             {list?.map((h, i) => (
               <div key={h.id} className={"history-item" + (sel?.id === h.id ? " on" : "")} onClick={() => setSel(h)}>
-                <div className="history-title">{i === 0 && <span className="badge">{t("いま")}</span>} {title(h)}</div>
+                <div className="history-title">{i === 0 && <span className="badge">{t("いま")}</span>} {classic && <code className="muted">{h.id.slice(0, 7)}</code>} {title(h)}</div>
                 <div className="muted small-text">{when(h.time)}・{h.author}{h.local_only && t("・📤 未送信")}</div>
               </div>
             ))}

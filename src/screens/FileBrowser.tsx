@@ -37,6 +37,8 @@ type Props = {
   extraStatus?: ReactNode;
   /** ファイルに変更が起きたとき（Git の状態更新用） */
   onMutate?: () => void;
+  /** 選択が変わったとき（フルパス） */
+  onSelect?: (paths: string[]) => void;
 };
 
 type Menu = { x: number; y: number; target: Entry | null };
@@ -50,6 +52,7 @@ export default function FileBrowser(p: Props) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<Set<string>>(new Set());
+  useEffect(() => { p.onSelect?.([...sel]); }, [sel]);
   const [anchor, setAnchor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
