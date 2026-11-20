@@ -292,3 +292,9 @@ body.dragging-files, body.dragging-files * { cursor: copy !important; user-selec
 .tool-menu > div { display: flex; align-items: center; gap: 8px; }
 .tool-menu .mi-check { width: 1em; text-align: center; color: var(--accent, #2563eb); }
 .warn-text { color: #b45309; }
+
+/* 同期ボタンが画面幅で切れないよう、狭いときは折り返す */
+.proj-head { flex-wrap: wrap; row-gap: 6px; }
+/* 通知は画面に重ねて出す（下の一覧がずれて押し間違えないように） */
+.banner.toast { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 9; max-width: min(720px, 92vw); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px #0003; }
+.banner.info { color: var(--accent); }

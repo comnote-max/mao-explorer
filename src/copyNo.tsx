@@ -5,9 +5,12 @@ const key = (fullName: string) => `mao.copyNo.${fullName}`;
 export function copyNumbers(fullName: string, names: string[]): Record<string, number> {
   let map: Record<string, number> = {};
   try { map = JSON.parse(localStorage.getItem(key(fullName)) ?? "{}"); } catch { /* 読めなければ振り直す */ }
-  let next = Math.max(0, ...Object.values(map)) + 1;
+  // 片付けた下書きの番号は忘れる（1つ目なのに「02」にならないように）。今ある下書きの番号は変えない
   let changed = false;
-  for (const n of names) if (!(n in map)) { map[n] = next++; changed = true; }
+  if (names.length) for (const k of Object.keys(map)) if (!names.includes(k)) { delete map[k]; changed = true; }
+  const used = new Set(Object.values(map));
+  let next = 1;
+  for (const n of names) if (!(n in map)) { while (used.has(next)) next++; map[n] = next; used.add(next); changed = true; }
   if (changed) try { localStorage.setItem(key(fullName), JSON.stringify(map)); } catch { /* 表示だけなので無視 */ }
   return map;
 }

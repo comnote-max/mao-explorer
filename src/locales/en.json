@@ -390,5 +390,13 @@
   "このPCには記録しましたが、クラウドへはまだ送っていません。「⟳ 同期」で送ります。": "Recorded on this PC, but not sent to the cloud yet. Press ⟳ Sync to send.",
   "🕘 以前の版に戻す": "🕘 Restore an earlier version",
   "✔ 本体と同じ内容": "✔ Same as main",
-  "「{0}」の内容を、{1}へ反映するよう依頼します。まだ送っていない変更も自動で含めます。": "Asks to apply \"{0}\" to {1}. Unsent changes are included automatically."
+  "「{0}」の内容を、{1}へ反映するよう依頼します。まだ送っていない変更も自動で含めます。": "Asks to apply \"{0}\" to {1}. Unsent changes are included automatically.",
+  "● 変更 {0} 件（自動送信を止めています）": "● {0} changes (auto-send paused)",
+  "「⟳ 同期」を押すと送ります。押すと自動送信も再開します。": "Press ⟳ Sync to send. That also resumes auto-send.",
+  "● 変更 {0} 件（{1} 秒後に自動で送ります）": "● {0} changes (sending in {1}s)",
+  "今は送らない": "Not now",
+  "編集が終わるまで送りたくないときに。「⟳ 同期」を押すまで自動では送りません": "Hold off while you're still editing. Nothing is sent automatically until you press ⟳ Sync.",
+  "確認待ちの変更があります（まだ{0}には入っていません）：": "Changes waiting for review (not in {0} yet):",
+  "下書き「{0}」を開く": "Open draft \"{0}\"",
+  "PCに取り込み中…": "Copying to this PC…"
 }

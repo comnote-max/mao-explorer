@@ -22,8 +22,10 @@ export default function App() {
   const [listError, setListError] = useState<string | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   // タブ：それぞれが1つの場所を表示する
-  const [tabs, setTabs] = useState<{ id: number; loc: Loc; back?: Loc[] }[]>([]);
-  const [active, setActive] = useState(0);
+  // モード・言語の切替で画面を読み込み直しても、開いていたタブに戻れるように覚えておく
+  const [tabs, setTabs] = useState<{ id: number; loc: Loc; back?: Loc[] }[]>(() => { try { return JSON.parse(sessionStorage.getItem("mao.tabs") ?? "[]"); } catch { return []; } });
+  const [active, setActive] = useState(() => Number(sessionStorage.getItem("mao.activeTab") ?? 0));
+  useEffect(() => { try { sessionStorage.setItem("mao.tabs", JSON.stringify(tabs)); sessionStorage.setItem("mao.activeTab", String(active)); } catch { /* 覚えられなくても動く */ } }, [tabs, active]);
   const tab = tabs.find((t) => t.id === active) ?? tabs[0];
   const loc: Loc | null = tab?.loc ?? null;
   const setLoc = (v: Loc | ((l: Loc | null) => Loc | null)) =>
@@ -54,6 +56,16 @@ export default function App() {
     : l.kind === "project" ? `📁 ${dispName(l.project)}${l.path && baseName(l.path) !== T.mainBranch ? ` › ${baseName(l.path)}` : ""}`
     : l.kind === "pc" ? "💻 PC"
     : `📁 ${baseName(l.path) || l.path}`;
+  // Esc でいちばん上のダイアログを閉じる（どのダイアログも背景クリックで閉じる作りなので、それを押す）
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const bgs = document.querySelectorAll<HTMLElement>(".modal-bg");
+      if (bgs.length) { e.preventDefault(); bgs[bgs.length - 1].click(); }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return;

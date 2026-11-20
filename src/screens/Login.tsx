@@ -41,7 +41,11 @@ export default function Login({ onDone, initialError }: { onDone: () => void; in
     }, interval * 1000);
   };
 
+  const starting = useRef(false);
   const start = async () => {
+    if (starting.current) return; // 連打しても1回だけ
+    starting.current = true;
+    window.clearTimeout(timer.current);
     setError(null);
     try {
       const dc = await invoke<DeviceCode>("login_start");
@@ -51,6 +55,8 @@ export default function Login({ onDone, initialError }: { onDone: () => void; in
       poll(dc, dc.interval);
     } catch (e) {
       setError(tErr(e));
+    } finally {
+      starting.current = false;
     }
   };
 

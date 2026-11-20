@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, dispName, fmtSize, Project, RemoteEntry } from "../api";
 import { T, HELP } from "../terms";
 import { isMarkdown, MarkdownToggle } from "../Markdown";
-import { t , tErr } from "../i18n";
+import { t, tErr, classic } from "../i18n";
 import ColumnTable from "./ColumnTable";
 
 const UP = "\u0000up";
@@ -72,6 +72,14 @@ export default function RemoteView({ project, onSynced, canBack, onBack, onUp }:
     }
   };
 
+  // モダン：開いたらそのまま既定の場所へ取り込んで、すぐ編集できるようにする（ボタンを押さなくてよい）
+  const [autoTried, setAutoTried] = useState(false);
+  useEffect(() => {
+    if (classic || autoTried || !dest || syncing) return;
+    setAutoTried(true);
+    doSync();
+  }, [dest]);
+
   const crumbs = path ? path.split("/") : [];
   const rows: RemoteEntry[] = [...(path ? [{ name: "..", path: UP, is_dir: true, size: 0 }] : []), ...(items ?? [])];
   const goUp = () => { if (path) { setText(null); setPath(crumbs.slice(0, -1).join("/")); } else onUp?.(); };
@@ -108,8 +116,8 @@ export default function RemoteView({ project, onSynced, canBack, onBack, onUp }:
         <ViewMenu view={view} onView={changeView} preview={preview} onPreview={togglePreview} />
         <MoreMenu />
         <span className="badge unsynced-badge">☁ {T.unsynced}・{t("閲覧のみ")}</span>
-        <button className="primary" title={HELP.clone} onClick={() => setAsking(true)} disabled={syncing}>
-          ⇅ {t("{0}して編集する", [T.sync])}
+        <button className="primary" title={HELP.clone} onClick={() => (classic ? setAsking(true) : doSync())} disabled={syncing}>
+          ⇅ {syncing ? t("PCに取り込み中…") : t("{0}して編集する", [T.sync])}
         </button>
       </div>
       {asking && (

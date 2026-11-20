@@ -45,7 +45,7 @@ export const HELP = {
   clone: help("clone", "クラウドのフォルダをPCに丸ごと取り込んで、編集できるようにします"),
   members: help("collaborators", "このフォルダを見られる人の一覧と、人の招待"),
   commit: help("commit", "選んだファイルを commit します（push はしません）"),
-  pull: help("pull", "origin の新しい commit を取り込みます（fetch して fast-forward / rebase）"),
+  pull: help("pull", "origin の新しい commit を取り込みます（fetch 後、ローカルに未 push の commit がなければ fast-forward、あれば rebase）"),
   push: help("push", "まだ送っていない commit を origin に push します"),
 } as const;
 

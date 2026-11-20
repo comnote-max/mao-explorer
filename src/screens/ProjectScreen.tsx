@@ -4,7 +4,7 @@ import { ACCESS_LABEL, T } from "../terms";
 import RemoteView from "./RemoteView";
 import LocalView from "./LocalView";
 import Members from "./Members";
-import { t , tErr } from "../i18n";
+import { t, tErr, classic } from "../i18n";
 
 export default function ProjectScreen({ project, onChanged, path, onPathChange, canBack, onBack, onUp }: {
   project: Project; onChanged: (p: Project) => void; path?: string; onPathChange?: (p: string) => void;
@@ -48,7 +48,7 @@ export default function ProjectScreen({ project, onChanged, path, onPathChange, 
         </span>
         <span className="muted grow">{dispDesc(project)}</span>
         <span id="proj-head-slot" />
-        {project.synced && project.main && (
+        {classic && project.synced && project.main && (
           <button title={project.main} onClick={async () => {
             if (!(await api.openInDesktop(project.main!))) window.alert(t("GitHub Desktop が見つかりません。インストールすると、同じフォルダを開けます。"));
           }}>{t("GitHub Desktop で開く")}</button>
