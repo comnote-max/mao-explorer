@@ -56,7 +56,8 @@ export default function ProjectScreen({ project, onChanged, path, onPathChange, 
         <Members project={project} />
       </header>
       {project.synced ? (
-        <LocalView project={project} cap={cap} path={path} onPathChange={onPathChange} canBack={canBack} onBack={onBack} onUp={onUp} />
+        <LocalView project={project} cap={cap} path={path} onPathChange={onPathChange} canBack={canBack} onBack={onBack} onUp={onUp}
+          onNotSynced={() => api.projectInfo(project.full_name).then((p) => onChanged({ ...p, synced: false })).catch(() => onChanged({ ...project, synced: false }))} />
       ) : (
         <RemoteView project={project} canBack={canBack} onBack={onBack} onUp={onUp} onSynced={() => api.projectInfo(project.full_name).then(onChanged)} />
       )}

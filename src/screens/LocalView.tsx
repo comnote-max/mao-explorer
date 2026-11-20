@@ -17,9 +17,9 @@ const loadSeen = (fn: string): number[] => {
 };
 
 /** 同期済みプロジェクト：通常のファイル一覧に、GitHub の操作グループを足したもの。 */
-export default function LocalView({ project, cap, path, onPathChange, canBack, onBack, onUp }: {
+export default function LocalView({ project, cap, path, onPathChange, canBack, onBack, onUp, onNotSynced }: {
   project: Project; cap: Capability | null; path?: string; onPathChange?: (p: string) => void;
-  canBack?: boolean; onBack?: () => void; onUp?: () => void;
+  canBack?: boolean; onBack?: () => void; onUp?: () => void; onNotSynced?: () => void;
 }) {
   const [folders, setFolders] = useState<Folder[] | null>(null);
   const [current, setCurrent] = useState<string>("");
@@ -65,7 +65,8 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   }, [project.full_name]);
 
   useEffect(() => {
-    loadFolders().catch((e) => setMessage({ kind: "error", text: tErr(e) }));
+    // 取り込み状態が古かった（PCにまだ無い）ときは、取り込み画面に切り替えてもらう
+    loadFolders().catch((e) => { if (onNotSynced && String(e).includes("まだ同期されていません")) onNotSynced(); else setMessage({ kind: "error", text: tErr(e) }); });
     loadRequests();
     const t = window.setInterval(loadRequests, 60_000);
     return () => window.clearInterval(t);
@@ -216,7 +217,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
     : st.ahead || st.behind ? t("⇅ {0}（送信 {1}・取得 {2}）", [T.pending, st.ahead, st.behind])
     : `✔ ${T.synced}`;
   const mergeText = folder && !folder.is_main && st
-    ? st.not_in_main === 0 && nChanges === 0 ? (classic ? t("✔ {0}（または変更なし）", [T.merged]) : t("✔ 本体と同じ内容")) : myRequest ? t("✉ 反映依頼中") : t("本体に未反映")
+    ? st.not_in_main === 0 && nChanges === 0 ? (classic ? (st.unpublished && !st.ahead ? t("✔ main と同じ（この branch に commit なし）", undefined, true) : t("✔ {0}", [T.merged])) : t("✔ 本体と同じ内容")) : myRequest ? t("✉ 反映依頼中") : t("本体に未反映")
     : null;
 
   const gitTools = (
@@ -283,7 +284,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
 
       {dialog === "history" && folder && (
         <HistoryDialog folder={folder} label={tagOf(folder)} hasChanges={nChanges > 0} onClose={() => setDialog(null)}
-          onDone={(text) => { setDialog(null); setMessage({ kind: "warn", text: text + t("　※まだこのPCの中だけです。「⟳ 同期」を押すとクラウドにも反映されます。") }); loadChanges(); }}
+          onDone={(text) => { setDialog(null); setMessage({ kind: "warn", text: text + t("　※まだこのPCの中だけです。「⟳ 同期」を押すとクラウドにも反映されます。") }); loadChanges(); loadFolders().catch(() => {}); }}
           onCopyFrom={async (id, name) => { setDialog(null); await run(T.createBranch, async () => { const f = await api.createFolder(project.full_name, name, folder.path, id); await loadFolders(); pick(f.path); }); }} />
       )}
       {dialog === "save" && (

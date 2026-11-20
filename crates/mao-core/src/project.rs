@@ -308,7 +308,8 @@ fn state(repo: &Repository, branch: &str, main: &str) -> Result<FolderState> {
 /// `from` を指定すると、そのコピーの保存済みの内容から作る（未指定なら本体の最新から）。
 pub fn create_folder(full_name: &str, display: &str, from: Option<&Path>, at: Option<&str>) -> Result<Folder> {
     let (lp, repo) = main_repo(full_name)?;
-    let display = safe_file_name(display.trim());
+    // 「mao/」は自動で付けるので、入力に含まれていたら外す（mao/mao/… にしない）
+    let display = safe_file_name(display.trim().trim_start_matches(BRANCH_PREFIX).trim());
     if display.is_empty() || display == MAIN_DIR {
         return user("この名前は使えません");
     }

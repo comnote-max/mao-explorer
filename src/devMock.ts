@@ -144,11 +144,12 @@ if (enabled) {
       return root;
     },
     folders: ({ fullName }) => { const l = local[fullName]; if (!l) err("このプロジェクトはまだ同期されていません"); return [l.main, ...Object.values(l.drafts)].map(folderView); },
-    create_folder: ({ fullName, name, from }) => {
+    create_folder: ({ fullName, name: raw, from }) => {
+      const name = String(raw).trim().replace(/^mao\//, "").trim();
       const l = local[fullName]; const p = projects.find((x) => x.full_name === fullName)!;
       const dir = `${masterDir}\\.mao-drafts\\${p.name}\\${name}`; if (fs.has(dir)) err("同じ名前のフォルダがすでにあります");
       const src = folders[from ?? l.main]; restore(dir, { ...src.saved });
-      folders[dir] = { saved: { ...src.saved }, ahead: 0, branch: "mao/" + name, is_main: false, full_name: fullName, hist: src.hist.map((h) => ({ ...h })), published: false };
+      folders[dir] = { saved: { ...src.saved }, ahead: 0, branch: "mao/" + name.replace(/[\s~^:?*[\\]/g, "-").replace(/\.\./g, "-"), is_main: false, full_name: fullName, hist: src.hist.map((h) => ({ ...h })), published: false };
       l.drafts[name] = dir; return folderView(dir);
     },
     remove_folder: ({ fullName, folder }) => { const l = local[fullName]; if (folder === l.main) err("本体は削除できません"); rmrf(folder); delete folders[folder]; for (const [k, v] of Object.entries(l.drafts)) if (v === folder) delete l.drafts[k]; },
@@ -191,7 +192,11 @@ if (enabled) {
     },
     history: ({ folder }) => folders[folder]?.hist.map(({ snap, ...h }) => h) ?? [],
     history_files: ({ folder, id }) => { const f = folders[folder]; const i = f.hist.findIndex((h) => h.id === id); const a = f.hist[i + 1]?.snap ?? {}; const b = f.hist[i].snap; return Object.keys({ ...a, ...b }).filter((k) => a[k] !== b[k]).map((k) => ({ path: k, kind: !(k in a) ? "added" : !(k in b) ? "deleted" : "modified" })); },
-    history_diff: () => null,
+    history_diff: ({ folder, id, rel }) => {
+      const f = folders[folder]; const i = f.hist.findIndex((h) => h.id === id); const a = f.hist[i + 1]?.snap[rel]; const b = f.hist[i]?.snap[rel];
+      const lines = (s: string | undefined, m: string) => (s === undefined ? [] : s.split("\n").map((l) => m + l));
+      return `@@ ${rel} @@\n${[...lines(a, "-"), ...lines(b, "+")].join("\n")}`;
+    },
     restore_file: ({ folder, id, rel }) => { const h = folders[folder].hist.find((x) => x.id === id)!; const t = h.snap[rel]; const p = folder + S + rel.split("/").join(S); if (t === undefined) rmrf(p); else write(p, t); },
     restore_all: ({ folder, id }) => { if (changesOf(folder).length) err("履歴未保存の変更があります。先に履歴保存するか、元に戻してください。"); const h = folders[folder].hist.find((x) => x.id === id)!; restore(folder, h.snap); return H.save({ folder, message: `「${h.message}」の時点に戻す`, files: [] }); },
     requests: ({ fullName }) => ({ me: "neko", list: requests[fullName] ?? [] }),
