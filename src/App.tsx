@@ -187,7 +187,8 @@ export default function App() {
         {loc?.kind === "github" && (account === null
           ? <Login onDone={refresh} initialError={error} />
           : <ProjectList projects={projects} error={listError} onOpen={(project) => go({ kind: "project", project })} onReload={loadProjects} />)}
-        {loc?.kind === "project" && (
+        {loc?.kind === "project" && account === null && <Login onDone={refresh} initialError={error} />}
+        {loc?.kind === "project" && account !== null && (
           <ProjectScreen key={`${tab!.id}:${loc.project.full_name}`} project={loc.project} path={loc.path}
             canBack={canBack} onBack={goBack} onUp={() => go({ kind: "github" })}
             onPathChange={(path) => setLoc((l) => (l?.kind === "project" ? { ...l, path } : l))}

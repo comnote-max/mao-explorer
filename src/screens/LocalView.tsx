@@ -41,7 +41,8 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
 
   // ツリーで選ばれた場所から、どの（仮想）フォルダかを決める
   useEffect(() => {
-    const f = path && folders?.find((x) => isUnder(path, x.path));
+    // 場所の指定がない（プロジェクト名や本体をクリックした）ときは本体を出す
+    const f = path ? folders?.find((x) => isUnder(path, x.path)) : folders?.find((x) => x.is_main);
     if (f && f.path !== current) setCurrent(f.path);
   }, [path, folders]);
   const folder = folders?.find((f) => f.path === current) ?? folders?.[0];
@@ -200,6 +201,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
     : nChanges > 0 && !classic && paused ? { kind: "warn", text: t("● 変更 {0} 件（自動送信を止めています）", [nChanges]), tip: t("「⟳ 同期」を押すと送ります。押すと自動送信も再開します。") }
     : nChanges > 0 && !classic ? { kind: "warn", text: secLeft !== null ? t("● 変更 {0} 件（{1} 秒後に自動で送ります）", [nChanges, secLeft]) : t("● 変更 {0} 件（まもなく自動で送ります）", [nChanges]), tip: t("編集が落ち着くと自動でクラウドへ送ります。すぐ送りたいときは「⟳ 同期」を押してください。") }
     : nChanges > 0 ? { kind: "warn", text: t("● まだ送っていない変更 {0} 件", [nChanges]), tip: t("この変更はまだこのPCの中だけです。「⟳ 同期」でクラウドへ送ります。") }
+    : st.unpublished && !st.ahead && st.not_in_main === 0 ? { kind: "ok", text: t("● 変更なし"), tip: t("まだ何も変更していないので、送るものはありません。") }
     : st.ahead || st.unpublished ? { kind: "warn", text: t("● まだクラウドへ送っていません"), tip: t("このPCには記録しましたが、クラウドへはまだ送っていません。「⟳ 同期」で送ります。") }
     : { kind: "ok", text: t("✔ クラウドと同じ"), tip: t("このPCの内容とクラウドの内容は同じです。") };
   const abText = st && !st.unpublished ? `↑${st.ahead} ↓${st.behind}` : t("upstream なし", undefined, true);
@@ -208,7 +210,8 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   const myRequest = folder && requests.find((r) => r.mine && r.head === folder.branch);
   const hasWork = !!folder && !folder.is_main && (st!.not_in_main > 0 || nChanges > 0);
   const statusText = !st ? "" : busy ? t("⟳ {0}中…", [busy])
-    : nChanges > 0 ? t("● {0} {1} 件", [T.localChanges, nChanges])
+    : nChanges > 0 ? (classic ? t("● {0} {1} 件", [T.localChanges, nChanges]) : t("● まだ送っていない変更 {0} 件", [nChanges]))
+    : st.unpublished && !st.ahead && st.not_in_main === 0 ? t("● 変更なし")
     : st.unpublished ? t("↑ 未送信（クラウドにまだありません）")
     : st.ahead || st.behind ? t("⇅ {0}（送信 {1}・取得 {2}）", [T.pending, st.ahead, st.behind])
     : `✔ ${T.synced}`;
@@ -316,10 +319,10 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
           onOk={(name) => { setDialog(null); return run(T.createBranch, async () => { const f = await api.createFolder(project.full_name, name, folder.is_main ? undefined : folder.path); await loadFolders(); pick(f.path); }); }} />
       )}
       {dialog === "request" && (
-        <RequestDialog folder={folder} base={project.default_branch} nChanges={nChanges} commits={st?.not_in_main ?? 0}
+        <RequestDialog owner={project.owner} folder={folder} base={project.default_branch} nChanges={nChanges} commits={st?.not_in_main ?? 0}
           onCommit={() => { setRequestAfterSave(true); setDialog("save"); }}
           onClose={() => setDialog(null)}
-          onOk={(title, msg) => { setDialog(null); return run(T.pullRequest, async () => { if (!classic && nChanges > 0) await api.save(folder.path, autoMessage(changes), []); const n = await api.sendRequest(project.full_name, folder.path, title, msg); setMessage({ kind: "ok", text: classic ? t("Pull request #{0} を作成しました（{1} → {2}）。", [n, folder.branch, project.default_branch], true) : t("反映依頼を送信しました。責任者の画面に通知されます。") }); }); }} />
+          onOk={(title, msg) => { setDialog(null); return run(T.pullRequest, async () => { if (!classic && nChanges > 0) await api.save(folder.path, autoMessage(changes), []); const n = await api.sendRequest(project.full_name, folder.path, title, msg); setMessage({ kind: "ok", text: classic ? t("Pull request #{0} を作成しました（{1} → {2}）。", [n, folder.branch, project.default_branch], true) : t("反映依頼を送信しました。{0}さんの画面に通知されます。", [project.owner]) }); }); }} />
       )}
       {dialog === "merge" && (
         <MergeDialog folder={folder} base={project.default_branch} commits={st?.not_in_main ?? 0}
@@ -373,8 +376,8 @@ function SaveDialog({ changes, merge, branch, onClose, onSave }: { changes: Chan
 }
 
 /** 反映依頼（Pull request）：タイトルと説明。説明は空でもよい */
-function RequestDialog({ folder, base, nChanges, commits, onCommit, onClose, onOk }: {
-  folder: Folder; base: string; nChanges: number; commits: number; onCommit: () => void; onClose: () => void; onOk: (title: string, msg: string) => void;
+function RequestDialog({ owner, folder, base, nChanges, commits, onCommit, onClose, onOk }: {
+  owner: string; folder: Folder; base: string; nChanges: number; commits: number; onCommit: () => void; onClose: () => void; onOk: (title: string, msg: string) => void;
 }) {
   const [title, setTitle] = useState(classic ? folder.branch : t("{0} を本体へ反映", [folder.name]));
   const [msg, setMsg] = useState("");
@@ -383,12 +386,12 @@ function RequestDialog({ folder, base, nChanges, commits, onCommit, onClose, onO
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{T.pullRequest}</h3>
         <p className="muted">{classic ? t("{0} ← {1}（{2} commits）。未 push の commit は自動で push します。", [base, folder.branch, commits], true)
-          : t("「{0}」の内容を、{1}へ反映するよう依頼します。まだ送っていない変更も自動で含めます。", [folder.name, T.mainBranch])}</p>
+          : t("{0}さん（このフォルダの管理者）に、「{1}」の内容を{2}へ入れてもらうよう依頼します。まだ送っていない変更も自動で含めます。", [owner, folder.name, T.mainBranch])}</p>
         {nChanges > 0 && classic && <p className="warn-text">{classic ? t("未 commit の変更が {0} 件あります。含めるには先に commit してください。", [nChanges], true)
           : t("履歴未保存の変更が {0} 件あります。依頼に含めるには先に履歴保存してください。", [nChanges])}
           {" "}<button className="small" onClick={onCommit}>{classic ? "Commit…" : t("📝 履歴保存する…")}</button></p>}
         <label className="field">{classic ? "Title" : t("件名")}<input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-        <label className="field">{classic ? "Description" : t("責任者へのメッセージ（任意）")}<textarea rows={5} value={msg} onChange={(e) => setMsg(e.target.value)} /></label>
+        <label className="field">{classic ? "Description" : t("{0}さんへのメッセージ（任意）", [owner])}<textarea rows={5} value={msg} onChange={(e) => setMsg(e.target.value)} /></label>
         <div className="actions">
           <button onClick={onClose}>{t("キャンセル")}</button>
           <button className="primary" disabled={!title.trim() || (commits === 0 && (classic || nChanges === 0))} title={commits === 0 && (classic || nChanges === 0) ? (classic ? t("PR に含める commit がありません", undefined, true) : t("依頼に含める履歴保存がありません")) : ""} onClick={() => onOk(title.trim(), msg)}>{t("依頼を送信")}</button>

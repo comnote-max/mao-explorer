@@ -398,5 +398,10 @@
   "編集が終わるまで送りたくないときに。「⟳ 同期」を押すまで自動では送りません": "Hold off while you're still editing. Nothing is sent automatically until you press ⟳ Sync.",
   "確認待ちの変更があります（まだ{0}には入っていません）：": "Changes waiting for review (not in {0} yet):",
   "下書き「{0}」を開く": "Open draft \"{0}\"",
-  "PCに取り込み中…": "Copying to this PC…"
+  "PCに取り込み中…": "Copying to this PC…",
+  "● 変更なし": "● No changes",
+  "まだ何も変更していないので、送るものはありません。": "Nothing changed yet, so there's nothing to send.",
+  "{0}さん（このフォルダの管理者）に、「{1}」の内容を{2}へ入れてもらうよう依頼します。まだ送っていない変更も自動で含めます。": "Asks {0} (this folder's owner) to put \"{1}\" into {2}. Unsent changes are included automatically.",
+  "{0}さんへのメッセージ（任意）": "Message to {0} (optional)",
+  "反映依頼を送信しました。{0}さんの画面に通知されます。": "Request sent. {0} will be notified."
 }
