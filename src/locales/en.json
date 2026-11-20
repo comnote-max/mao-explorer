@@ -377,5 +377,18 @@
   "（インターネット上の誰でも見られます。社内資料には使わないでください）": " (anyone on the internet can see it; don't use for internal documents)",
   "{0} さんに招待を送りました。相手に届く GitHub のメール（または github.com の通知）で「承諾」を押してもらうと、見られるようになります。": "Invitation sent to {0}. They can see the folder after they press “Accept” in the GitHub email (or the notification on github.com).",
   "→ 移動": "→ Move",
-  "→ コピー（Shift で移動）": "→ Copy (Shift to move)"
+  "→ コピー（Shift で移動）": "→ Copy (Shift to move)",
+  "「{0}」を{1}に反映しますか？": "Merge \"{0}\" into {1}?",
+  "反映すると{0}の中身が更新されます。ほかの人にもすぐ反映されます。": "This updates {0}. Others will see it right away.",
+  "反映する": "Merge",
+  "変更 {0}": "Changes {0}",
+  "{0}は直接変更できないため、あなたの変更を下書き「{1}」に移しました。あとは反映依頼を送るだけです。": "{0} can't be changed directly, so your changes were moved to the draft \"{1}\". Just send the request.",
+  "● 変更 {0} 件（反映依頼が必要）": "● {0} changes (request needed)",
+  "このチームの本体は直接変更できません。「⟳ 同期」を押すと、変更を下書きに移して反映依頼の画面を開きます。": "This team's main can't be changed directly. Press ⟳ Sync to move your changes to a draft and open the request screen.",
+  "● 変更 {0} 件（まもなく自動で送ります）": "● {0} changes (sending automatically soon)",
+  "編集が落ち着くと自動でクラウドへ送ります。すぐ送りたいときは「⟳ 同期」を押してください。": "Changes are sent to the cloud automatically once you stop editing. Press ⟳ Sync to send now.",
+  "このPCには記録しましたが、クラウドへはまだ送っていません。「⟳ 同期」で送ります。": "Recorded on this PC, but not sent to the cloud yet. Press ⟳ Sync to send.",
+  "🕘 以前の版に戻す": "🕘 Restore an earlier version",
+  "✔ 本体と同じ内容": "✔ Same as main",
+  "「{0}」の内容を、{1}へ反映するよう依頼します。まだ送っていない変更も自動で含めます。": "Asks to apply \"{0}\" to {1}. Unsent changes are included automatically."
 }

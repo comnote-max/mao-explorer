@@ -338,6 +338,25 @@ pub fn create_folder(full_name: &str, display: &str, from: Option<&Path>, at: Op
         .ok_or_else(|| ProjError::User("仮想フォルダの作成後に見つかりません".into()))
 }
 
+/// 本体に直接送れない（保護されている）ときに、本体での変更をそのまま新しい下書きへ移す。
+/// 未保存の変更は自動で履歴保存し、その内容で下書きを作ってから、本体はクラウドの状態に戻す。
+pub fn move_to_draft(full_name: &str, display: &str, login: &str) -> Result<Folder> {
+    let (lp, repo) = main_repo(full_name)?;
+    if !changes_of(&repo)?.is_empty() {
+        save(&lp.main_dir(), "本体での変更（下書きへ移動）", &[], login)?;
+    }
+    let head = repo.head()?.peel_to_commit()?.id();
+    let up = repo.refname_to_id(&format!("refs/remotes/origin/{}", lp.default_branch))?;
+    if head == up || repo.graph_ahead_behind(head, up)?.0 == 0 {
+        return user("移す変更がありません");
+    }
+    let f = create_folder(full_name, display, None, Some(&head.to_string()))?;
+    // 変更は下書き側に残ったので、本体はクラウドと同じ状態に戻す（作業ツリーは保存済みでクリーン）
+    let obj = repo.find_object(up, None)?;
+    repo.reset(&obj, git2::ResetType::Hard, Some(CheckoutBuilder::new().force()))?;
+    Ok(f)
+}
+
 /// コピー（仮想フォルダ）を片付ける。フォルダはごみ箱へ移すので、ファイルは元に戻せる。
 /// `remote` が true なら GitHub 上の作業場所も消す（本体に反映済みのときに使う）。
 pub fn remove_folder(full_name: &str, folder: &Path, remote: bool) -> Result<()> {
@@ -524,6 +543,53 @@ pub fn sync(folder: &Path, login: &str) -> Result<SyncResult> {
         push(&repo, &branch, &token)?;
     }
     Ok(SyncResult::Done { received, sent: ahead })
+}
+
+/// 受信だけ行う（クラシックの Pull）。fetch して、fast-forward か自分の commit を積み直す（rebase）。
+pub fn pull(folder: &Path, login: &str) -> Result<SyncResult> {
+    let repo = Repository::open(folder)?;
+    let n = changes_of(&repo)?.len();
+    if n > 0 {
+        return Ok(SyncResult::NeedSave { changes: n });
+    }
+    let token = crate::github::token()?;
+    let branch = repo.head()?.shorthand().unwrap_or_default().to_string();
+    fetch(&repo, &token)?;
+    let Ok(up) = repo.refname_to_id(&format!("refs/remotes/origin/{branch}")) else {
+        return Ok(SyncResult::Done { received: 0, sent: 0 });
+    };
+    let head = repo.head()?.peel_to_commit()?.id();
+    let (ahead, behind) = repo.graph_ahead_behind(head, up)?;
+    if behind > 0 && ahead == 0 {
+        fast_forward(&repo, &branch, up)?;
+    } else if behind > 0 {
+        let conflicts = rebase_onto(&repo, up, login)?;
+        if !conflicts.is_empty() {
+            return Ok(SyncResult::Conflict { files: conflicts });
+        }
+    }
+    Ok(SyncResult::Done { received: behind, sent: 0 })
+}
+
+/// 送信だけ行う（クラシックの Push）。相手側が先に進んでいたら送らずに止める（先に Pull）。
+pub fn push_only(folder: &Path) -> Result<SyncResult> {
+    let repo = Repository::open(folder)?;
+    let token = crate::github::token()?;
+    let branch = repo.head()?.shorthand().unwrap_or_default().to_string();
+    fetch(&repo, &token)?;
+    let head = repo.head()?.peel_to_commit()?.id();
+    let Ok(up) = repo.refname_to_id(&format!("refs/remotes/origin/{branch}")) else {
+        push(&repo, &branch, &token)?;
+        return Ok(SyncResult::Done { received: 0, sent: 1 });
+    };
+    let (ahead, behind) = repo.graph_ahead_behind(head, up)?;
+    if behind > 0 {
+        return user("origin 側に新しい commit があります。先に Pull してください");
+    }
+    if ahead > 0 {
+        push(&repo, &branch, &token)?;
+    }
+    Ok(SyncResult::Done { received: 0, sent: ahead })
 }
 
 /// 送信だけ行う（反映依頼の前など）。

@@ -173,6 +173,22 @@ if (enabled) {
       if (f.is_main) { remote[f.full_name] = { ...f.saved }; remoteHist[f.full_name] = f.hist.map((h) => ({ ...h })); }
       return { result: "done", received: 0, sent };
     },
+    pull: ({ folder }) => { const ch = changesOf(folder).length; if (ch) return { result: "need_save", changes: ch }; return { result: "done", received: 0, sent: 0 }; },
+    push: ({ folder }) => {
+      const f = folders[folder];
+      if (f.is_main && f.ahead > 0 && f.full_name.startsWith("tanaka/")) err("GitHubへの送信が拒否されました（protected branch）。本体へ直接書き込めない設定の可能性があります。");
+      const sent = f.ahead || (f.published ? 0 : 1); f.ahead = 0; f.published = true; f.hist.forEach((h) => (h.local_only = false));
+      if (f.is_main) { remote[f.full_name] = { ...f.saved }; remoteHist[f.full_name] = f.hist.map((h) => ({ ...h })); }
+      return { result: "done", received: 0, sent };
+    },
+    move_to_draft: ({ fullName, name }) => {
+      const l = local[fullName]; const m = folders[l.main];
+      if (changesOf(l.main).length) H.save({ folder: l.main, message: "本体での変更（下書きへ移動）", files: [] });
+      if (!m.ahead) err("移す変更がありません");
+      const v = H.create_folder({ fullName, name, from: l.main }); const d = folders[v.path]; d.ahead = m.ahead;
+      m.saved = { ...remote[fullName] }; restore(l.main, m.saved); m.hist = remoteHist[fullName].map((h) => ({ ...h })); m.ahead = 0;
+      return folderView(v.path);
+    },
     history: ({ folder }) => folders[folder]?.hist.map(({ snap, ...h }) => h) ?? [],
     history_files: ({ folder, id }) => { const f = folders[folder]; const i = f.hist.findIndex((h) => h.id === id); const a = f.hist[i + 1]?.snap ?? {}; const b = f.hist[i].snap; return Object.keys({ ...a, ...b }).filter((k) => a[k] !== b[k]).map((k) => ({ path: k, kind: !(k in a) ? "added" : !(k in b) ? "deleted" : "modified" })); },
     history_diff: () => null,
@@ -180,10 +196,11 @@ if (enabled) {
     restore_all: ({ folder, id }) => { if (changesOf(folder).length) err("履歴未保存の変更があります。先に履歴保存するか、元に戻してください。"); const h = folders[folder].hist.find((x) => x.id === id)!; restore(folder, h.snap); return H.save({ folder, message: `「${h.message}」の時点に戻す`, files: [] }); },
     requests: ({ fullName }) => ({ me: "neko", list: requests[fullName] ?? [] }),
     request_files: () => [],
-    send_request: ({ fullName, folder, title, message }) => { const n = reqNo++; requests[fullName].push({ number: n, title, body: message, author: "neko", head: folders[folder].branch, base: "main", created_at: new Date().toISOString(), url: "", mine: true, draft: false }); return n; },
+    send_request: ({ fullName, folder, title, message }) => { const pf = folders[folder]; pf.ahead = 0; pf.published = true; pf.hist.forEach((h) => (h.local_only = false)); const n = reqNo++; requests[fullName].push({ number: n, title, body: message, author: "neko", head: folders[folder].branch, base: "main", created_at: new Date().toISOString(), url: "", mine: true, draft: false }); return n; },
     merge_folder: ({ fullName, folder }) => {
       const f = folders[folder]; const mainDir = local[fullName].main; const m = folders[mainDir];
       if (fullName.startsWith("tanaka/")) { const n = H.send_request({ fullName, folder, title: "反映依頼", message: "" }); return { result: "blocked", reason: "本体は保護されています。責任者への依頼が必要です", number: n }; }
+      f.ahead = 0; f.published = true; f.hist.forEach((h) => (h.local_only = false));
       remote[fullName] = { ...f.saved }; m.saved = { ...f.saved }; restore(mainDir, f.saved); m.hist = f.hist.map((h) => ({ ...h, local_only: false })); remoteHist[fullName] = m.hist.map((h) => ({ ...h }));
       return { result: "merged" };
     },

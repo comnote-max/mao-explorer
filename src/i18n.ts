@@ -32,10 +32,12 @@ const CLASSIC_KEY = "mao.classic";
 export const classic: boolean = (() => { try { return localStorage.getItem(CLASSIC_KEY) === "1"; } catch { return false; } })();
 const WORDS: [string, string][] = classic ? ((classicWords as unknown as Record<string, [string, string][]>)[lang] ?? []) : [];
 const toClassic = (s: string) => WORDS.reduce((r, [a, b]) => r.split(a).join(b), s);
+/** クラシック専用の文言（置き換えだと文が崩れるものは丸ごと書き直す。キーは日本語の原文） */
+const PHRASES: Record<string, string> = classic ? ((classicWords as unknown as { phrases?: Record<string, Record<string, string>> }).phrases?.[lang] ?? {}) : {};
 
 export function t(s: string, p?: unknown[], raw = false): string {
   let r = DICTS[lang]?.[s] || s;
-  if (classic && !raw) r = toClassic(r);
+  if (classic && !raw) r = PHRASES[s] ?? toClassic(r);
   return p ? r.replace(/\{(\d+)\}/g, (m, i) => (p[+i] ?? "") + "") : r;
 }
 

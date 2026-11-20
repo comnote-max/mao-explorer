@@ -1,4 +1,4 @@
-import { t } from "./i18n";
+import { classic, t } from "./i18n";
 /** 仮想フォルダの「下書き01」番号。一度付けた番号は変えない（片付けても他の番号はずれない）。 */
 const key = (fullName: string) => `mao.copyNo.${fullName}`;
 
@@ -12,7 +12,8 @@ export function copyNumbers(fullName: string, names: string[]): Record<string, n
   return map;
 }
 
-export const copyText = (n: number) => t("下書き{0}", [String(n).padStart(2, "0")]);
+/** クラシックでは番号ではなく branch 名そのものを使う */
+export const copyText = (n: number, name?: string) => classic && name ? name : t("下書き{0}", [String(n).padStart(2, "0")]);
 
-/** 黄色い楕円の「下書き01」タグ */
-export const CopyTag = ({ n }: { n: number }) => <span className="copytag">{copyText(n)}</span>;
+/** 黄色い楕円の「下書き01」タグ（クラシックでは branch 名が横に出るので出さない） */
+export const CopyTag = ({ n }: { n: number }) => classic ? null : <span className="copytag">{copyText(n)}</span>;

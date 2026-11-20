@@ -284,3 +284,11 @@ button.big { font-size: 15px; padding: 8px 24px; }
 .drop-over { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 12%, transparent) !important; }
 .drag-ghost { position: fixed; z-index: 9999; pointer-events: none; background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 3px 8px; font-size: 12px; box-shadow: 0 4px 12px #0003; white-space: nowrap; }
 body.dragging-files, body.dragging-files * { cursor: copy !important; user-select: none; }
+
+/* アイコン（クラシック＝絵文字／モダン＝線） */
+.ic.svg { vertical-align: -3px; }
+.fic { width: 1.15em; height: 1.15em; vertical-align: -3px; }
+.tile-icon .fic { width: 1em; height: 1em; }
+.tool-menu > div { display: flex; align-items: center; gap: 8px; }
+.tool-menu .mi-check { width: 1em; text-align: center; color: var(--accent, #2563eb); }
+.warn-text { color: #b45309; }

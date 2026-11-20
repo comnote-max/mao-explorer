@@ -203,6 +203,20 @@ async fn sync(folder: PathBuf) -> R<pj::SyncResult> {
     let me = login().await?;
     blocking(move || pj::sync(&folder, &me)).await
 }
+#[tauri::command]
+async fn pull(folder: PathBuf) -> R<pj::SyncResult> {
+    let me = login().await?;
+    blocking(move || pj::pull(&folder, &me)).await
+}
+#[tauri::command]
+async fn move_to_draft(full_name: String, name: String) -> R<pj::Folder> {
+    let me = login().await?;
+    blocking(move || pj::move_to_draft(&full_name, &name, &me)).await
+}
+#[tauri::command]
+async fn push(folder: PathBuf) -> R<pj::SyncResult> {
+    blocking(move || pj::push_only(&folder)).await
+}
 
 // ---- 本体への反映 ----
 
@@ -363,7 +377,7 @@ pub fn run() {
             projects, create_project, project_info, capability, browse_remote, read_remote, readme, default_root, master_dir, set_master_dir, open_in_desktop, first_sync,
             folders, create_folder, history, history_files, history_diff, restore_file, restore_all,
             set_private, members, invites, invite, cancel_invite, remove_member,
-            remove_folder, list_local, changes, save, sync,
+            remove_folder, list_local, changes, save, sync, pull, push, move_to_draft,
             requests, request_files, send_request, merge_folder, merge_request, request_changes,
             fs_places, fs_list, fs_new_folder, fs_new_file, fs_rename, fs_delete, fs_copy, fs_move, fs_open, fs_reveal, fs_read_text, file_diff
         ])

@@ -69,6 +69,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", k);
   });
   const [settings, setSettings] = useState(false);
+  useEffect(() => { const o = () => setSettings(true); window.addEventListener("mao:open-settings", o); return () => window.removeEventListener("mao:open-settings", o); }, []);
   const [open, setOpen] = useState<Record<string, boolean>>({ pc: true, github: false, nas: true, onedrive: true, gdrive: true });
   const fsCur = loc?.kind === "fs" ? loc.path : null;
   const goFs = (path: string) => go({ kind: "fs", path });

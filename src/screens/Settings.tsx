@@ -33,8 +33,8 @@ export default function Settings({ onClose }: { onClose: () => void }) {
         </label>
         <p className="muted small-text">{t("GitHub Desktop と同じ場所にすると、そこにあるフォルダは自動で「PCと同期中」になり、両方のアプリで同じフォルダを開けます。")}</p>
         {msg && <p className="muted small-text">{msg}</p>}
-        <label className="check-row"><input type="checkbox" checked={cls} onChange={(e) => setCls(e.target.checked)} /> {t("クラシックモード（Git の用語で表示）")}</label>
-        <p className="muted small-text">{t("下書き→ブランチ、履歴保存→コミット、反映依頼→プルリクエスト のように、Git の正式な用語で表示します。", undefined, true)}</p>
+        <label className="check-row"><input type="checkbox" checked={cls} onChange={(e) => setCls(e.target.checked)} /> {t("クラシックモード（Git 経験者向け）", undefined, true)}</label>
+        <p className="muted small-text">{t("下書き→branch、履歴保存→commit、同期→push / pull、反映→merge のように Git の用語そのままで表示します。オフにするとモダン（はじめての人向けのやさしい言葉）になります。", undefined, true)}</p>
         {changed && <p className="muted">{t("表示を切り替えると、画面を読み込み直します。")}</p>}
         <div className="actions">
           <button onClick={onClose}>{t("閉じる")}</button>

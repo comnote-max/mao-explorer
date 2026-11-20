@@ -1,3 +1,5 @@
+import { FileIcon, Ic } from "../icons";
+import { MoreMenu, ViewMenu } from "./ToolMenus";
 import { useEffect, useState } from "react";
 import { api, dispName, fmtSize, Project, RemoteEntry } from "../api";
 import { T, HELP } from "../terms";
@@ -98,11 +100,13 @@ export default function RemoteView({ project, onSynced, canBack, onBack, onUp }:
           ))}
         </div>
         <div className="viewsw" title={t("表示方法")}>
-          <button className={"icon" + (view === "details" ? " on" : "")} title={t("詳細")} onClick={() => changeView("details")}>☰</button>
-          <button className={"icon" + (view === "medium" ? " on" : "")} title={t("中アイコン")} onClick={() => changeView("medium")}>▦</button>
-          <button className={"icon" + (view === "large" ? " on" : "")} title={t("大アイコン")} onClick={() => changeView("large")}>⬜</button>
+          <button className={"icon" + (view === "details" ? " on" : "")} title={t("詳細")} onClick={() => changeView("details")}><Ic name="details" /></button>
+          <button className={"icon" + (view === "medium" ? " on" : "")} title={t("中アイコン")} onClick={() => changeView("medium")}><Ic name="medium" /></button>
+          <button className={"icon" + (view === "large" ? " on" : "")} title={t("大アイコン")} onClick={() => changeView("large")}><Ic name="large" /></button>
         </div>
-        <button className={"icon" + (preview ? " on" : "")} title={t("プレビュー ウィンドウ（Alt+P）")} onClick={togglePreview}>{t("👁 プレビュー")}</button>
+        <button className={"icon" + (preview ? " on" : "")} title={t("プレビュー ウィンドウ（Alt+P）")} onClick={togglePreview}><Ic name="preview" /> {t("プレビュー")}</button>
+        <ViewMenu view={view} onView={changeView} preview={preview} onPreview={togglePreview} />
+        <MoreMenu />
         <span className="badge unsynced-badge">☁ {T.unsynced}・{t("閲覧のみ")}</span>
         <button className="primary" title={HELP.clone} onClick={() => setAsking(true)} disabled={syncing}>
           ⇅ {t("{0}して編集する", [T.sync])}
@@ -125,7 +129,7 @@ export default function RemoteView({ project, onSynced, canBack, onBack, onUp }:
             <ColumnTable rows={rows} rowKey={(e) => e.path} storageKey="mao.remoteCols"
               rowProps={(e) => ({ onClick: () => (e.path === UP ? setPath(crumbs.slice(0, -1).join("/")) : open(e)) })}
               columns={[
-                { id: "name", label: t("名前"), width: 360, cell: (e) => e.path === UP ? "⬆ .." : `${e.is_dir ? "📁" : "📄"} ${e.name}`, title: (e) => e.name },
+                { id: "name", label: t("名前"), width: 360, cell: (e) => e.path === UP ? "⬆ .." : <><FileIcon name={e.name} dir={e.is_dir} emoji={e.is_dir ? "📁" : "📄"} /> {e.name}</>, title: (e) => e.name },
                 { id: "type", label: t("種類"), width: 130, className: "muted", cell: (e) => e.path === UP ? "" : e.is_dir ? t("フォルダ") : (e.name.includes(".") ? e.name.split(".").pop()!.toUpperCase() + " " + t("ファイル") : t("ファイル")) },
                 { id: "size", label: t("サイズ"), width: 110, className: "muted num", cell: (e) => e.is_dir ? "" : fmtSize(e.size) },
               ]} />
@@ -134,7 +138,7 @@ export default function RemoteView({ project, onSynced, canBack, onBack, onUp }:
               {rows.map((e) => (
                 <div key={e.path} className="tile" title={e.name}
                   onClick={() => (e.path === UP ? setPath(crumbs.slice(0, -1).join("/")) : open(e))}>
-                  <div className="tile-icon">{e.path === UP ? "⬆" : e.is_dir ? "📁" : "📄"}</div>
+                  <div className="tile-icon">{e.path === UP ? "⬆" : <FileIcon name={e.name} dir={e.is_dir} emoji={e.is_dir ? "📁" : "📄"} />}</div>
                   <div className="tile-name">{e.path === UP ? ".." : e.name}</div>
                 </div>
               ))}

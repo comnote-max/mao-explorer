@@ -1,3 +1,5 @@
+import { FileIcon, Ic } from "../icons";
+import { MoreMenu, ViewMenu } from "./ToolMenus";
 import type React from "react";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -311,7 +313,7 @@ export default function FileBrowser(p: Props) {
 
       <div className="commandbar">
         <div className="dropdown">
-          <button onClick={(e) => { e.stopPropagation(); setNewMenu(!newMenu); }}>{t("⊕ 新規作成 ▾")}</button>
+          <button onClick={(e) => { e.stopPropagation(); setNewMenu(!newMenu); }}><Ic name="new" /> {t("新規作成")} ▾</button>
           {newMenu && (
             <div className="menu" style={{ top: "100%", left: 0 }}>
               <div onClick={() => createNew("folder")}>{t("📁 フォルダー")}</div>
@@ -320,22 +322,29 @@ export default function FileBrowser(p: Props) {
           )}
         </div>
         <span className="sep" />
-        <button className="icon" title={t("切り取り（Ctrl+X）")} disabled={!selected.length} onClick={() => doCopy("cut")}>✂</button>
-        <button className="icon" title={t("コピー（Ctrl+C）")} disabled={!selected.length} onClick={() => doCopy("copy")}>⧉</button>
-        <button className="icon" title={t("貼り付け（Ctrl+V）")} disabled={!clipboard} onClick={() => doPaste()}>📋</button>
-        <button className="icon" title={t("名前の変更（F2）")} disabled={selected.length !== 1} onClick={() => setRenaming(selected[0].path)}>✏</button>
-        <button className="icon" title={t("削除（Delete）")} disabled={!selected.length} onClick={doDelete}>🗑</button>
+        <button className="icon" title={t("切り取り（Ctrl+X）")} disabled={!selected.length} onClick={() => doCopy("cut")}><Ic name="cut" /></button>
+        <button className="icon" title={t("コピー（Ctrl+C）")} disabled={!selected.length} onClick={() => doCopy("copy")}><Ic name="copy" /></button>
+        <button className="icon" title={t("貼り付け（Ctrl+V）")} disabled={!clipboard} onClick={() => doPaste()}><Ic name="paste" /></button>
+        <button className="icon" title={t("名前の変更（F2）")} disabled={selected.length !== 1} onClick={() => setRenaming(selected[0].path)}><Ic name="rename" /></button>
+        <button className="icon" title={t("削除（Delete）")} disabled={!selected.length} onClick={doDelete}><Ic name="delete" /></button>
         <span className="sep" />
-        <label className="check"><input type="checkbox" checked={showHidden}
-          onChange={(e) => { setShowHidden(e.target.checked); localStorage.setItem("mao.hidden", e.target.checked ? "1" : "0"); }} /> {t("隠しファイル")}</label>
         {p.extraTools && <><span className="sep" />{p.extraTools}</>}
         <span className="grow" />
-        <button className={"icon" + (preview ? " on" : "")} title={t("プレビュー ウィンドウ（Alt+P）")} onClick={togglePreview}>{t("👁 プレビュー")}</button>
+        <button className={"icon" + (preview ? " on" : "")} title={t("プレビュー ウィンドウ（Alt+P）")} onClick={togglePreview}><Ic name="preview" /> {t("プレビュー")}</button>
         <div className="viewsw" title={t("表示方法")}>
-          <button className={"icon" + (view === "details" ? " on" : "")} title={t("詳細")} onClick={() => changeView("details")}>☰</button>
-          <button className={"icon" + (view === "medium" ? " on" : "")} title={t("中アイコン")} onClick={() => changeView("medium")}>▦</button>
-          <button className={"icon" + (view === "large" ? " on" : "")} title={t("大アイコン")} onClick={() => changeView("large")}>⬜</button>
+          <button className={"icon" + (view === "details" ? " on" : "")} title={t("詳細")} onClick={() => changeView("details")}><Ic name="details" /></button>
+          <button className={"icon" + (view === "medium" ? " on" : "")} title={t("中アイコン")} onClick={() => changeView("medium")}><Ic name="medium" /></button>
+          <button className={"icon" + (view === "large" ? " on" : "")} title={t("大アイコン")} onClick={() => changeView("large")}><Ic name="large" /></button>
         </div>
+        <ViewMenu view={view} onView={changeView} preview={preview} onPreview={togglePreview}
+          hidden={showHidden} onHidden={(v) => { setShowHidden(v); localStorage.setItem("mao.hidden", v ? "1" : "0"); }} />
+        <MoreMenu items={[
+          { icon: "selectAll", label: t("すべて選択"), onClick: () => setSel(new Set(shown.map((e) => e.path))) },
+          { icon: "selectNone", label: t("選択解除"), disabled: !sel.size, onClick: () => setSel(new Set()) },
+          { icon: "invert", label: t("選択の切り替え"), onClick: () => setSel(new Set(shown.filter((e) => !sel.has(e.path)).map((e) => e.path))) },
+          "sep",
+          { icon: "path", label: t("パスのコピー"), onClick: () => navigator.clipboard.writeText(selected.length ? selected.map((e) => e.path).join(String.fromCharCode(13, 10)) : path) },
+        ]} />
       </div>
 
       {error && <div className="banner error">{error}<button className="small" onClick={() => setError(null)}>×</button></div>}
@@ -349,7 +358,7 @@ export default function FileBrowser(p: Props) {
           rowProps={(e) => itemProps(e, markOf(e))}
           columns={[
             { id: "name", label: <>{t("名前")}{arrow("name")}</>, width: 360, className: "name", onHeader: () => sortBy("name"), title: (e) => e.name,
-              cell: (e) => <><span className="ficon">{e.is_dir ? "📁" : icon(e.name)}</span>{nameOf(e)}</> },
+              cell: (e) => <><span className="ficon"><FileIcon name={e.name} dir={e.is_dir} emoji={e.is_dir ? "📁" : icon(e.name)} /></span>{nameOf(e)}</> },
             { id: "modified", label: <>{t("更新日時")}{arrow("modified")}</>, width: 170, className: "muted", onHeader: () => sortBy("modified"), cell: (e) => fmtTime(e.modified) },
             { id: "size", label: <>{t("サイズ")}{arrow("size")}</>, width: 100, className: "muted num", onHeader: () => sortBy("size"), cell: (e) => (e.is_dir ? "" : fmtSize(e.size)) },
             ...(p.gitRoot ? [{ id: "state", label: t("状態"), width: 110, cell: (e: Entry) => { const m = markOf(e); return m ? <span className={`mark ${m}`}>● {CHANGE_LABEL[m] ?? m}</span> : <span className="mark ok" title={t("クラウドと同じ内容です")}>✓</span>; } }] : []),
@@ -360,7 +369,7 @@ export default function FileBrowser(p: Props) {
               const m = markOf(e);
               return (
                 <div key={e.path} {...itemProps(e, m)} className={"tile " + itemProps(e, m).className} title={e.name}>
-                  <div className="tile-icon">{e.is_dir ? "📁" : isImage(e) ? <Thumb path={e.path} modified={e.modified} fallback={icon(e.name)} /> : icon(e.name)}
+                  <div className="tile-icon">{isImage(e) ? <Thumb path={e.path} modified={e.modified} fallback={icon(e.name)} /> : <FileIcon name={e.name} dir={e.is_dir} emoji={e.is_dir ? "📁" : icon(e.name)} />}
                     {m && <span className={`tile-mark mark ${m}`} title={CHANGE_LABEL[m] ?? m}>●</span>}</div>
                   <div className="tile-name">{nameOf(e)}</div>
                 </div>

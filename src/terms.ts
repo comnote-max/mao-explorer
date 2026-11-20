@@ -44,6 +44,9 @@ export const HELP = {
   requestChanges: help("request changes", "取り込まずに、直してほしい点を依頼者に伝えます"),
   clone: help("clone", "クラウドのフォルダをPCに丸ごと取り込んで、編集できるようにします"),
   members: help("collaborators", "このフォルダを見られる人の一覧と、人の招待"),
+  commit: help("commit", "選んだファイルを commit します（push はしません）"),
+  pull: help("pull", "origin の新しい commit を取り込みます（fetch して fast-forward / rebase）"),
+  push: help("push", "まだ送っていない commit を origin に push します"),
 } as const;
 
 export const ACCESS_LABEL = { read: t("閲覧のみ"), write: t("作業・依頼可"), admin: t("管理者") } as const;
