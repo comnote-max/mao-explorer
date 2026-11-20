@@ -410,6 +410,7 @@ pub fn file_diff(folder: &Path, rel: &str) -> Result<Option<String>> {
     let mut binary = false;
     diff.print(git2::DiffFormat::Patch, |delta, _, line| {
         if delta.flags().is_binary() { binary = true; return true; }
+        if line.origin() == 'F' { return true; }
         match line.origin() {
             '+' | '-' | ' ' => out.push(line.origin()),
             _ => {}
@@ -884,6 +885,8 @@ pub fn history_diff(folder: &Path, id: &str, rel: &str) -> Result<Option<String>
     let mut binary = false;
     diff.print(git2::DiffFormat::Patch, |delta, _, line| {
         if delta.flags().is_binary() { binary = true; return true; }
+        // ファイル見出し（diff --git・index・---・+++）は出さない。日本語名が \350… のように化けるため
+        if line.origin() == 'F' { return true; }
         if matches!(line.origin(), '+' | '-' | ' ') { out.push(line.origin()); }
         out.push_str(&String::from_utf8_lossy(line.content()));
         out.len() < 2_000_000

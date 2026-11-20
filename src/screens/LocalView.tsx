@@ -38,6 +38,8 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   const [mergeAfterSave, setMergeAfterSave] = useState(false);
   const [requestAfterSave, setRequestAfterSave] = useState(false);
   const selected = useRef<string[]>([]);
+  // 戻したあとなど、ファイル一覧を読み直したいときに増やす
+  const [rev, setRev] = useState(0);
   const [seen, setSeen] =useState<number[]>(() => loadSeen(project.full_name));
 
   // ツリーで選ばれた場所から、どの（仮想）フォルダかを決める
@@ -225,7 +227,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
     <div className="gitgroup">
       {(classic || folder?.is_main) && <button onClick={() => setDialog("newFolder")} disabled={!!busy}
         title={!folder || folder.is_main ? HELP.createBranch : HELP.branchFrom}>
-        ＋ {!folder || folder.is_main ? T.createBranch : <>{t("{0} から下書き", [copyText(nums[folder.name], folder.name)])}</>}
+        ＋ {!folder || folder.is_main ? T.createBranch : <>{t("{0} から下書き", [copyText(nums[folder.name], folder.branch)])}</>}
       </button>}
       {slot && createPortal(<>
         <span className={"cloud-state " + cloudState.kind} title={cloudState.tip}>{cloudState.text}</span>
@@ -275,7 +277,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
         ⏳ {t("確認待ちの変更があります（まだ{0}には入っていません）：", [T.mainBranch])}
         {waiting.map((f) => <button key={f.path} className="small" onClick={() => pick(f.path)}>{t("下書き「{0}」を開く", [f.name])}</button>)}
       </div>}
-      <FileBrowser key={folder.path} onSelect={(ps) => { selected.current = ps; }} path={path && isUnder(path, folder.path) ? path : folder.path} onPathChange={onPathChange} rootLimit={folder.path}
+      <FileBrowser key={folder.path + "#" + rev}onSelect={(ps) => { selected.current = ps; }} path={path && isUnder(path, folder.path) ? path : folder.path} onPathChange={onPathChange} rootLimit={folder.path}
         canOuterBack={canBack} outerBack={onBack}
         outerUp={() => { const m = folders?.find((f) => f.is_main); if (!folder.is_main && m) pick(m.path); else onUp?.(); }}
         rootLabel={tagOf(folder)}
@@ -285,7 +287,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
 
       {dialog === "history" && folder && (
         <HistoryDialog folder={folder} prefer={selected.current[0] && isUnder(selected.current[0], folder.path) ? selected.current[0].slice(folder.path.length + 1).replace(/\\/g, "/") : undefined} label={tagOf(folder)} hasChanges={nChanges > 0} onClose={() => setDialog(null)}
-          onDone={(text) => { setDialog(null); setMessage({ kind: "warn", text: text + t("　※まだこのPCの中だけです。「⟳ 同期」を押すとクラウドにも反映されます。") }); loadChanges(); loadFolders().catch(() => {}); }}
+          onDone={(text) => { setDialog(null); setMessage({ kind: "warn", text: text + (classic ? t("　※まだこのPCの中だけです。「⟳ 同期」を押すとクラウドにも反映されます。") : t("　しばらくすると自動でクラウドへ送ります。")) }); loadChanges(); loadFolders().catch(() => {}); setRev((r) => r + 1); }}
           onCopyFrom={async (id, name) => { setDialog(null); await run(T.createBranch, async () => { const f = await api.createFolder(project.full_name, name, folder.path, id); await loadFolders(); pick(f.path); }); }} />
       )}
       {dialog === "save" && (
@@ -313,10 +315,10 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
           }} />
       )}
       {dialog === "newFolder" && (
-        <PromptDialog title={folder.is_main ? T.createBranch : t("{0} から下書きを作る", [copyText(nums[folder.name], folder.name)])} label={t("名前（例：見積書の修正）")} ok={t("作成")}
+        <PromptDialog title={folder.is_main ? T.createBranch : t("{0} から下書きを作る", [copyText(nums[folder.name], folder.branch)])} label={t("名前（例：見積書の修正）")} ok={t("作成")}
           note={folder.is_main
             ? t("{0}の最新の内容から、作業用の下書きを作ります。{1}には影響しません。", [T.mainBranch, T.mainBranch])
-            : t("{0} の履歴保存済みの内容から、新しい下書きを作ります。{1}元のフォルダと{2}には影響しません。", [copyText(nums[folder.name], folder.name), nChanges > 0 ? t("履歴未保存の変更 {0} 件は含まれません。必要なら先に履歴保存してください。", [nChanges]) : "", T.mainBranch])}
+            : t("{0} の履歴保存済みの内容から、新しい下書きを作ります。{1}元のフォルダと{2}には影響しません。", [copyText(nums[folder.name], folder.branch), nChanges > 0 ? t("履歴未保存の変更 {0} 件は含まれません。必要なら先に履歴保存してください。", [nChanges]) : "", T.mainBranch])}
           onClose={() => setDialog(null)}
           onOk={(name) => { setDialog(null); return run(T.createBranch, async () => { const f = await api.createFolder(project.full_name, name, folder.is_main ? undefined : folder.path); await loadFolders(); pick(f.path); }); }} />
       )}

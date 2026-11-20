@@ -39,7 +39,8 @@ if (enabled) {
   };
   type Hist = { id: string; message: string; author: string; time: number; local_only: boolean; snap: Record<string, string> };
   const remoteHist: Record<string, Hist[]> = {};
-  for (const fn of Object.keys(remote)) remoteHist[fn] = [{ id: "c0", message: "最初の保存", author: fn.split("/")[0], time: now() - 86400 * 7, local_only: false, snap: { ...remote[fn] } }];
+  const sha = () => Array.from({ length: 40 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+  for (const fn of Object.keys(remote)) remoteHist[fn] = [{ id: sha(), message: "最初の保存", author: fn.split("/")[0], time: now() - 86400 * 7, local_only: false, snap: { ...remote[fn] } }];
 
   // ---- PC に取り込んだプロジェクト ----
   type Loc = { full_name: string; main: string; drafts: Record<string, string> };
@@ -115,7 +116,7 @@ if (enabled) {
     project_info: ({ fullName }) => view(projects.find((p) => p.full_name === fullName)!),
     create_project: ({ name, private: priv, description }) => {
       const p: Proj = { full_name: `neko/${name}`, name, owner: "neko", private: priv, description, default_branch: "main", access: "admin", updated_at: new Date().toISOString() };
-      projects.unshift(p); remote[p.full_name] = { "README.md": `# ${description?.match(/^【(.+?)】/)?.[1] ?? name}` }; remoteHist[p.full_name] = [{ id: "c" + Date.now(), message: "最初の保存", author: "neko", time: now(), local_only: false, snap: { ...remote[p.full_name] } }]; requests[p.full_name] = [];
+      projects.unshift(p); remote[p.full_name] = { "README.md": `# ${description?.match(/^【(.+?)】/)?.[1] ?? name}` }; remoteHist[p.full_name] = [{ id: sha(), message: "最初の保存", author: "neko", time: now(), local_only: false, snap: { ...remote[p.full_name] } }]; requests[p.full_name] = [];
       return view(p);
     },
     set_private: ({ fullName, private: priv }) => { const p = projects.find((x) => x.full_name === fullName)!; p.private = priv; return view(p); },
@@ -165,7 +166,7 @@ if (enabled) {
       const f = folders[folder]; if (!message?.trim()) err("履歴保存のメッセージを入力してください");
       const ch = changesOf(folder).filter((c) => !files?.length || files.includes(c.path)); if (!ch.length) err("履歴保存する変更がありません");
       const cur = snapshot(folder); for (const c of ch) { if (c.kind === "deleted") delete f.saved[c.path]; else f.saved[c.path] = cur[c.path]; }
-      const id = "c" + Date.now(); f.hist.unshift({ id, message, author: "neko", time: now(), local_only: true, snap: { ...f.saved } }); f.ahead++; return id;
+      const id = Array.from({ length: 40 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(""); f.hist.unshift({ id, message, author: "neko", time: now(), local_only: true, snap: { ...f.saved } }); f.ahead++; return id;
     },
     sync: ({ folder }) => {
       const f = folders[folder]; const ch = changesOf(folder).length; if (ch) return { result: "need_save", changes: ch };
@@ -195,7 +196,7 @@ if (enabled) {
     history_diff: ({ folder, id, rel }) => {
       const f = folders[folder]; const i = f.hist.findIndex((h) => h.id === id); const a = f.hist[i + 1]?.snap[rel]; const b = f.hist[i]?.snap[rel];
       const lines = (s: string | undefined, m: string) => (s === undefined ? [] : s.split("\n").map((l) => m + l));
-      return `@@ ${rel} @@\n${[...lines(a, "-"), ...lines(b, "+")].join("\n")}`;
+      return `@@ -1 +1 @@\n${[...lines(a, "-"), ...lines(b, "+")].join("\n")}`;
     },
     restore_file: ({ folder, id, rel }) => { const h = folders[folder].hist.find((x) => x.id === id)!; const t = h.snap[rel]; const p = folder + S + rel.split("/").join(S); if (t === undefined) rmrf(p); else write(p, t); },
     restore_all: ({ folder, id }) => { if (changesOf(folder).length) err("履歴未保存の変更があります。先に履歴保存するか、元に戻してください。"); const h = folders[folder].hist.find((x) => x.id === id)!; restore(folder, h.snap); return H.save({ folder, message: `「${h.message}」の時点に戻す`, files: [] }); },

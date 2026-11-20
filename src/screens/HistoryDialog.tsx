@@ -52,7 +52,8 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
   const restoreFile = () => sel && file && act(async () => {
     if (!window.confirm(t("「{0}」を、{1}「{2}」の時点の中身に戻します。\n\n今の中身は「{3}」していなければ失われますが、履歴保存済みの内容はいつでもこの画面から取り戻せます。", [file, when(sel.time), title(sel), T.commit]))) return;
     await api.restoreFile(folder.path, sel.id, file);
-    onDone(t("「{0}」を {1} の時点に戻しました。よければ「{2}」してください。", [file, when(sel.time), T.commit]));
+    onDone(classic ? t("「{0}」を {1} の時点に戻しました。よければ「{2}」してください。", [file, when(sel.time), T.commit])
+      : t("「{0}」を {1} の時点に戻しました。", [file, when(sel.time)]));
   });
   const restoreAll = () => sel && act(async () => {
     if (hasChanges) { setErr(t("{0}していない変更があります。先に{1}してから戻してください。", [T.commit, T.commit])); return; }
@@ -89,6 +90,7 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
                 <button disabled={busy} onClick={copyFrom} title={t("この時点の状態から、新しい下書きを作ります")}>{t("＋ この時点から下書きを作る")}</button>
               </div>
               <div className="history-files">
+                {!files && <p className="muted">{t("読み込み中…")}</p>}
                 {files?.length === 0 && <p className="muted">{t("変わったファイルはありません")}</p>}
                 {files?.map((f) => (
                   <div key={f.path} className={"history-file" + (file === f.path ? " on" : "")} onClick={() => setFile(f.path)}>
