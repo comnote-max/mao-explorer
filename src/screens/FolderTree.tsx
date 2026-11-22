@@ -107,7 +107,7 @@ export function ProjectNode({ project, active, current, onSelect }: {
         <TreeNode path={main.path} label={T.mainBranch} icon="🏠" depth={2} current={current} onSelect={onSelect}
           extraCount={virt.length} defaultOpen
           extra={virt.map((f) => (
-            <TreeNode key={f.path} path={f.path} label={<><CopyTag n={nums[f.name]} /> {f.name}</>} onMenu={(e) => setMenu({ x: e.clientX, y: e.clientY, f })} icon="" depth={3} current={current} onSelect={onSelect} />
+            <TreeNode key={f.path} path={f.path} label={<span style={f.state.not_in_main === 0 && f.state.changes === 0 && !f.state.unpublished ? { opacity: 0.5 } : undefined} title={f.state.not_in_main === 0 && f.state.changes === 0 && !f.state.unpublished ? t("本体に反映済み（右クリックで片付けられます）") : undefined}><CopyTag n={nums[f.name]} /> {f.name}{f.state.not_in_main === 0 && f.state.changes === 0 && !f.state.unpublished ? " ✔" : ""}</span>} onMenu={(e) => setMenu({ x: e.clientX, y: e.clientY, f })} icon="" depth={3} current={current} onSelect={onSelect} />
           ))} />
       )}
       {menu && (

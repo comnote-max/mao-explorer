@@ -141,11 +141,11 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
     if (r.result === "done") setMessage(r.sent > 0 ? { kind: "ok", text: t("origin/{0} に {1} 件の commit を Push しました。", [folder.branch, r.sent], true) } : { kind: "ok", text: t("Push する commit はありません。", undefined, true) });
   });
   const sentMessage = (sent: number, received: number) =>
-    sent > 0 && people !== null && people <= 1 && project.private
+    sent > 0 && people !== null && people <= 1 && project.private && !inviteHinted(project.full_name)
       ? { kind: "ok" as const, invite: project.access === "admin", text: t("☁ クラウドへ送りました。ただし、このフォルダはまだあなただけのものです。ほかの人に見せるには招待してください。") }
       : { kind: "ok" as const, text: sentText(sent, received) };
   const sentText = (sent: number, received: number) =>
-    sent > 0 ? t("☁ クラウドへ送りました。このフォルダに招待されている人も、同じ内容を見られます。")
+    sent > 0 ? (people !== null && people <= 1 ? t("☁ クラウドへ送りました。") : t("☁ クラウドへ送りました。このフォルダに招待されている人も、同じ内容を見られます。"))
     : received > 0 ? t("☁ クラウドから {0} 件の更新を受け取りました。", [received])
     : t("✔ クラウドと同じ状態です。");
   // モダン：編集が落ち着いたら（20秒変更がなければ）自動で同期する。ボタンを押さなくてもクラウドへ送られる
@@ -167,13 +167,15 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   });
   const [paused, setPaused] = useState(false); // 「今は送らない」：次に自分で同期するまで自動では送らない
   const [dueAt, setDueAt] = useState<number | null>(null);
+  const dueMap = useRef<Record<string, number>>({});
   const [, setNow] = useState(0);
   // 変更が多すぎるときは念のため自動では送らない
   const tooMany = mine.length > AUTO_MAX;
   const autoOn = !classic && !!folder && !protectedMain && mine.length > 0 && !tooMany && !busy && !dialog && message?.kind !== "error" && !paused;
   const doAutoSync = () => run(T.sync, async () => {
     if (!folder || !mine.length) return;
-    await api.save(folder.path, autoMessage(mine), mine.map((c) => c.path));
+    // 名前を変えた直後など、記録する中身がないときは気にせず次へ（エラーにして自動送信を止めない）
+    await api.save(folder.path, autoMessage(mine), mine.map((c) => c.path)).catch((e) => { if (!/履歴保存する変更がありません/.test(String(e))) throw e; });
     // ほかの変更が残っていると取り込み（pull）ができないので、送るだけにする
     const r = others > 0 ? await api.push(folder.path).catch(() => null) : await api.sync(folder.path);
     if (!r) {
@@ -186,7 +188,9 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   });
   // 送る予定時刻は「送る対象が変わったとき」だけ決め直す（読み込みなどで一瞬止まっても、数字が戻らないように）
   useEffect(() => {
-    setDueAt(!classic && folder && mine.length > 0 && !tooMany && !paused ? Date.now() + 20_000 : null);
+    // フォルダを行き来しても、同じ変更なら送る予定時刻は延ばさない
+    const key = (folder?.path ?? "") + "|" + changeSig;
+    setDueAt(!classic && folder && mine.length > 0 && !tooMany && !paused ? (dueMap.current[key] ??= Date.now() + 20_000) : null);
   }, [changeSig, folder?.path, paused]);
   const now = Date.now();
   useEffect(() => {
@@ -291,7 +295,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
       </button>}
       {slot && createPortal(<>
         <span className={"cloud-state " + cloudState.kind} title={cloudState.tip}>{cloudState.text}</span>
-        {!classic && secLeft !== null && <button className="small" onClick={() => setPaused(true)} title={t("編集が終わるまで送りたくないときに。「⟳ 同期」を押すまで自動では送りません")}>{t("今は送らない")}</button>}
+        {!classic && <button className="small" style={{ visibility: secLeft !== null ? "visible" : "hidden" }} disabled={secLeft === null} onClick={() => setPaused(true)} title={t("編集が終わるまで送りたくないときに。「⟳ 同期」を押すまで自動では送りません")}>{t("今は送らない")}</button>}
         {classic ? <>
           <span className="cloud-state" title={t("origin/{0} との差（↑ Push していない commit・↓ Pull していない commit）", [folder?.branch ?? ""], true)}>{abText}</span>
           <button className="sync-btn" onClick={doPull} disabled={!!busy} title={HELP.pull}>
@@ -307,30 +311,25 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
         </button>)}
       </>, slot)}
       {classic && <button className={nChanges ? "primary" : ""} onClick={() => setDialog("save")} disabled={!!busy || !nChanges} title={HELP.commit}>📝 Commit…</button>}
-      {!!st?.ahead && !!st?.behind && nChanges === 0 && (
-        <button className="primary" onClick={() => setDialog("conflict")} disabled={!!busy}
-          title={classic ? t("ローカルと origin の両方に新しい commit があります。conflict を確認して解決し、merge commit を作って push します。", undefined, true) : t("このPCとクラウドの両方で変更があります。どちらの内容を残すか選んで、まとめて送ります。")}>
-          {classic ? t("⚠ 分岐を解決（↑{0} ↓{1}）", [st.ahead, st.behind], true) : t("⚠ ぶつかりを解決する")}
-        </button>)}
       {folder && !folder.is_main && (
         <button onClick={doUpdateFromMain} disabled={!!busy}
           title={classic ? t("origin/{0} をこの branch に merge します（conflict したら解決画面を開きます）", [project.default_branch], true) : t("本体のいちばん新しい内容を、この下書きに取り込みます。同じ所が変わっていたら、どちらを残すか選べます")}>
           {classic ? t("⬇ {0} を merge", [project.default_branch], true) : t("⬇ 本体 → この下書きへ取り込む")}
         </button>)}
       <button onClick={() => setDialog("history")} disabled={!!busy || !folder} title={HELP.history}>{classic ? t("🕘 履歴") : t("🕘 巻戻し")}</button>
-      {hasWork && cap?.mode === "request" && (
-        <button className="primary" title={HELP.pullRequest} onClick={() => setDialog("request")} disabled={!!busy}>✉ {myRequest ? t("反映依頼中（追記）") : T.pullRequest}</button>
+      {folder && !folder.is_main && cap?.mode === "request" && (
+        <button className={hasWork ? "primary" : ""} title={hasWork ? HELP.pullRequest : t("本体に反映していない変更はありません")} onClick={() => setDialog("request")} disabled={!!busy || !hasWork}>✉ {myRequest ? t("反映依頼中（追記）") : T.pullRequest}</button>
       )}
-      {hasWork && cap?.mode === "direct" && (
-        <button className="primary" disabled={!!busy} title={HELP.merge + (nChanges > 0 ? "\n" + t("履歴未保存の変更を履歴保存してから反映します") : "")}
+      {folder && !folder.is_main && cap?.mode === "direct" && (
+        <button className={hasWork ? "primary" : ""} disabled={!!busy || !hasWork} title={!hasWork ? t("本体に反映していない変更はありません") : HELP.merge + (nChanges > 0 ? "\n" + t("履歴未保存の変更を履歴保存してから反映します") : "")}
           onClick={() => { if (nChanges > 0 && classic) { setMergeAfterSave(true); setDialog("save"); } else setDialog("merge"); }}>
           ⤴ {classic ? T.merge : t("この下書き → 本体に反映")}
         </button>
       )}
       {incoming.length > 0 ? (
         <button className={unseen > 0 ? "blink" : ""} onClick={openRequests} title={HELP.incoming}>📨 {t("届いた依頼（{0}）", [incoming.length])}</button>
-      ) : requests.length > 0 && (
-        <button onClick={openRequests} title={HELP.outgoing}>✉ {t("改変通知（{0}）", [requests.length])}</button>
+      ) : (
+        <button onClick={openRequests} disabled={requests.length === 0} title={requests.length ? HELP.outgoing : t("いま処理待ちの反映依頼はありません")}>✉ {t("改変通知（{0}）", [requests.length])}</button>
       )}
     </div>
   );
@@ -343,6 +342,10 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
         {message.cleanup && <button className="small" onClick={() => removeBranch(message.cleanup!)}>🗑 {classic ? t("branch「{0}」を削除", [message.cleanup.branch], true) : t("下書き「{0}」を片付ける", [message.cleanup.name])}</button>}
         {message.invite && <button className="primary small" onClick={() => window.dispatchEvent(new Event("mao:open-members"))}>👥 {t("人を招待する")}</button>}
         <button className="small" onClick={() => setMessage(null)}>×</button></div>}
+      {!!st?.ahead && !!st?.behind && nChanges === 0 && dialog !== "conflict" && <div className="banner warn">
+        {classic ? t("⚠ ローカルと origin の両方に新しい commit があります（↑{0} ↓{1}）。", [st.ahead, st.behind], true) : t("⚠ このPCとクラウドの両方で変更があります。")}
+        <button className="primary small" onClick={() => setDialog("conflict")} disabled={!!busy}>{classic ? t("分岐を解決", undefined, true) : t("どちらを残すか選ぶ")}</button>
+      </div>}
       {folder.is_main && !classic && waiting.length > 0 && <div className="banner info">
         ⏳ {t("{0}への反映待ち：", [T.mainBranch])}
         {waiting.map((f) => <button key={f.path} className="small" onClick={() => pick(f.path)}>{t("「{0}」を開く", [f.name.length > 18 ? f.name.slice(0, 17) + "…" : f.name])}</button>)}
@@ -394,10 +397,17 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
       {dialog === "newFolder" && (
         <PromptDialog title={folder.is_main ? T.createBranch : t("{0} から下書きを作る", [copyText(nums[folder.name], folder.branch)])} label={t("名前（例：見積書の修正）")} ok={t("作成")}
           note={folder.is_main
-            ? t("{0}の最新の内容から、作業用の下書きを作ります。{1}には影響しません。", [T.mainBranch, T.mainBranch]) + (nChanges > 0 ? "\n\n" + t("⚠ まだ送っていない変更 {0} 件は下書きに入りません（{1}に残ります）。下書きに入れたいときは、先に「⟳ 同期」で送ってください。", [nChanges, T.mainBranch]) : "")
+            ? t("{0}の最新の内容から、作業用の下書きを作ります。{1}には影響しません。", [T.mainBranch, T.mainBranch]) + (!classic && mine.length > 0 ? "\n\n" + t("このアプリで直した {0} 件は、先にクラウドへ送ってから下書きを作ります（下書きにも入ります）。", [mine.length]) : "")
+              + (nChanges - (classic ? 0 : mine.length) > 0 ? "\n\n" + t("⚠ ほかの {0} 件（このアプリから開いていない変更）は下書きに入りません（{1}に残ります）。", [nChanges - (classic ? 0 : mine.length), T.mainBranch]) : "")
             : t("{0} の履歴保存済みの内容から、新しい下書きを作ります。{1}元のフォルダと{2}には影響しません。", [copyText(nums[folder.name], folder.branch), nChanges > 0 ? t("履歴未保存の変更 {0} 件は含まれません。必要なら先に履歴保存してください。", [nChanges]) : "", T.mainBranch])}
           onClose={() => setDialog(null)}
-          onOk={(name) => { setDialog(null); return run(T.createBranch, async () => { const f = await api.createFolder(project.full_name, name, folder.is_main ? undefined : folder.path); await loadFolders(); pick(f.path); }); }} />
+          onOk={(name) => { setDialog(null); return run(T.createBranch, async () => {
+            // モダン：このアプリで直した変更は先に送っておく（下書きに入るように）
+            if (!classic && folder.is_main && mine.length > 0) {
+              await api.save(folder.path, autoMessage(mine), mine.map((c) => c.path)).catch((e) => { if (!/履歴保存する変更がありません/.test(String(e))) throw e; });
+              await (others > 0 ? api.push(folder.path) : api.sync(folder.path)).catch(() => null);
+            }
+            const f = await api.createFolder(project.full_name, name, folder.is_main ? undefined : folder.path); await loadFolders(); pick(f.path); }); }} />
       )}
       {dialog === "request" && (
         <RequestDialog owner={project.owner} folder={folder} base={project.default_branch} nChanges={nChanges} commits={st?.not_in_main ?? 0}
@@ -407,6 +417,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
       )}
       {dialog === "merge" && (
         <MergeDialog folder={folder} base={project.default_branch} commits={st?.not_in_main ?? 0}
+          mainUnsent={(() => { const m = folders?.find((f) => f.is_main)?.state; return m ? m.changes + m.ahead : 0; })()}
           onClose={() => setDialog(null)} onOk={() => { setDialog(null); if (nChanges > 0 && !classic) run(T.merge, async () => { await api.save(folder.path, autoMessage(changes), []); showMerge(await api.mergeFolder(project.full_name, folder.path, mergeTitle(folder))); }); else doMerge(); }} />
       )}
       {dialog === "requests" && (
@@ -483,7 +494,14 @@ function RequestDialog({ owner, folder, base, nChanges, commits, onCommit, onClo
 }
 
 /** 本体への反映（merge）の確認 */
-function MergeDialog({ folder, base, commits, onClose, onOk }: { folder: Folder; base: string; commits: number; onClose: () => void; onOk: () => void }) {
+/** 「まだあなただけ」の招待案内は、プロジェクトごとに 1 回だけ出す */
+function inviteHinted(fullName: string) {
+  const k = "mao.inviteHint." + fullName;
+  try { if (localStorage.getItem(k)) return true; localStorage.setItem(k, "1"); } catch { /* 出せなくても困らない */ }
+  return false;
+}
+
+function MergeDialog({ folder, base, commits, mainUnsent, onClose, onOk }: { folder: Folder; base: string; commits: number; mainUnsent: number; onClose: () => void; onOk: () => void }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -497,6 +515,9 @@ function MergeDialog({ folder, base, commits, onClose, onOk }: { folder: Folder;
         ) : (
           <p className="muted">{t("下書き「{0}」の変更を本体に取り込みます。反映した内容はすぐクラウドの本体に入り、ほかの人にも届きます。", [folder.name])}</p>
         )}
+        {mainUnsent > 0 && <p className="warn">{classic
+          ? t("ローカルの main に未 commit / 未 push の変更が {0} 件あります。merge 後の main の pull で conflict する可能性があります。", [mainUnsent], true)
+          : t("⚠ 本体に、まだクラウドへ送っていない変更が {0} 件あります。同じ所を直していると、あとでぶつかります。先に本体を開いて「⟳ 同期」しておくと安心です。", [mainUnsent])}</p>}
         <div className="actions">
           <button onClick={onClose}>{t("キャンセル")}</button>
           <button className="primary" onClick={onOk}>{classic ? "Merge" : t("反映する")}</button>
@@ -539,6 +560,18 @@ function autoMessage(changes: Change[]) {
   return names.length > 2 ? t("{0} ほか {1} 件を" + verb, [head, names.length - 2]) : t("{0} を" + verb, [head]);
 }
 
+/** 手で直すときの下書き：両方の行を、同じ行は 1 回だけにして並べる（違う行は両方残すので、要らない方を消す） */
+function mergeLines(a: string, b: string) {
+  const A = a.split(/\r?\n/), B = b.split(/\r?\n/);
+  const out: string[] = []; let j = 0;
+  for (const l of A) {
+    const k = B.indexOf(l, j);
+    if (k >= 0) { out.push(...B.slice(j, k), l); j = k + 1; } else out.push(l);
+  }
+  out.push(...B.slice(j));
+  return out.join("\n");
+}
+
 /** ぶつかった（同じファイルを PC とクラウドの両方で変えた）ときに、どちらを残すか選ぶ画面 */
 function ConflictDialog({ folder, from, onClose, onDone }: { folder: string; from?: string; onClose: () => void; onDone: (r: SyncResult) => void }) {
   const [list, setList] = useState<ConflictFile[] | null>(null);
@@ -564,8 +597,8 @@ function ConflictDialog({ folder, from, onClose, onDone }: { folder: string; fro
         <h3>{classic ? t("conflict の解決", undefined, true) : t("⚠ ぶつかりの解決")}</h3>
         <p className="muted">{classic
           ? t("ローカルと origin の両方で変更されたファイルです。採用する内容を選ぶと、merge commit を作って push します（rebase はしません）。", undefined, true)
-          : from ? t("この下書きと本体の両方で、同じファイルが変更されています。ファイルごとに、残す内容を選んでください。決めると、そのまま本体に反映します。選ばなかった方も履歴に残るので、あとから「🕘 巻戻し」で取り戻せます。")
-          : t("このPCとクラウドの両方で、同じファイルが変更されています。ファイルごとに、残す内容を選んでください。選ばなかった方も履歴に残るので、あとから「🕘 巻戻し」で取り戻せます。")}</p>
+          : from ? t("色の付いた行が、違っているところです。この下書きと本体の両方で、同じファイルが変更されています。ファイルごとに、残す内容を選んでください。決めると、そのまま本体に反映します。選ばなかった方も履歴に残るので、あとから「🕘 巻戻し」で取り戻せます。")
+          : t("色の付いた行が、違っているところです。このPCとクラウドの両方で、同じファイルが変更されています。ファイルごとに、残す内容を選んでください。選ばなかった方も履歴に残るので、あとから「🕘 巻戻し」で取り戻せます。")}</p>
         {err && <div className="error">{err}</div>}
         {!list && !err && <p className="muted">{t("読み込み中…")}</p>}
         {none && <p>{t("ぶつかっているファイルはありません。このまま合わせて送れます。")}</p>}
@@ -577,14 +610,20 @@ function ConflictDialog({ folder, from, onClose, onDone }: { folder: string; fro
                 {([["mine", classic ? t("ローカル（ours）", undefined, true) : from ? t("この下書きの内容") : t("このPCの内容"), f.mine, f.mine_deleted], ["theirs", classic ? (from ? `origin/${from}（theirs）` : t("origin（theirs）", undefined, true)) : from ? t("本体の内容") : t("クラウドの内容"), f.theirs, f.theirs_deleted]] as const).map(([k, label, text, del]) => (
                   <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4, border: "2px solid " + (pick[f.path] === k ? "var(--accent, #2563eb)" : "transparent"), borderRadius: 6, padding: 4 }}>
                     <span><input type="radio" name={f.path} checked={pick[f.path] === k} onChange={() => setPick({ ...pick, [f.path]: k })} style={{ width: "auto" }} /> {t("{0}を使う", [label])}</span>
-                    <pre className="diff" style={{ maxHeight: 180, overflow: "auto", margin: 0, whiteSpace: "pre-wrap" }}>{show(text, del)}</pre>
+                    <pre className="diff" style={{ maxHeight: 180, overflow: "auto", margin: 0, whiteSpace: "pre-wrap" }}>{text === null || del ? show(text, del)
+                      : text.split(/\r?\n/).map((l, i) => {
+                        // 相手側にない行（＝ぶつかっている所）に色を付ける
+                        const other = (k === "mine" ? f.theirs : f.mine) ?? "";
+                        const diff = !other.split(/\r?\n/).includes(l);
+                        return <div key={i} style={diff ? { background: k === "mine" ? "rgba(250,200,0,.35)" : "rgba(60,160,255,.3)" } : undefined}>{l || " "}</div>;
+                      })}</pre>
                   </label>
                 ))}
               </div>
               {f.mine !== null && f.theirs !== null && (
                 <label style={{ display: "block", marginTop: 6 }}>
                   <input type="radio" name={f.path} checked={pick[f.path] === "edit"} style={{ width: "auto" }}
-                    onChange={() => { setPick({ ...pick, [f.path]: "edit" }); setEdit((m) => ({ ...m, [f.path]: m[f.path] ?? (classic ? `<<<<<<< ours (local)\n${f.mine ?? ""}${f.mine?.endsWith("\n") ? "" : "\n"}=======\n${f.theirs ?? ""}${f.theirs?.endsWith("\n") ? "" : "\n"}>>>>>>> theirs (origin)\n` : f.mine ?? "") })); }} />
+                    onChange={() => { setPick({ ...pick, [f.path]: "edit" }); setEdit((m) => ({ ...m, [f.path]: m[f.path] ?? (classic ? `<<<<<<< ours (local)\n${f.mine ?? ""}${f.mine?.endsWith("\n") ? "" : "\n"}=======\n${f.theirs ?? ""}${f.theirs?.endsWith("\n") ? "" : "\n"}>>>>>>> theirs (origin)\n` : mergeLines(f.mine ?? "", f.theirs ?? "")) })); }} />
                   {" "}{t("見比べて直したものを使う")}
                   {pick[f.path] === "edit" && <textarea value={edit[f.path] ?? ""} onChange={(e) => setEdit({ ...edit, [f.path]: e.target.value })} rows={8} style={{ width: "100%", fontFamily: "monospace", marginTop: 4 }} />}
                 </label>
@@ -594,7 +633,7 @@ function ConflictDialog({ folder, from, onClose, onDone }: { folder: string; fro
         </div>
         {marked && <p className="error">{classic ? t("conflict marker（<<<<<<< / ======= / >>>>>>>）が残っています。取り除いてから merge してください。", undefined, true) : t("「<<<<<<<」などの印が残っています。残したい内容だけにしてから送ってください。")}</p>}
         <div className="actions">
-          <button onClick={onClose}>{t("あとで")}</button>
+          <button onClick={onClose} title={t("今は決めずに閉じます。どちらの内容も消えません。あとで画面上の「どちらを残すか選ぶ」から再開できます")}>{t("あとで（今は決めない）")}</button>
           <button className="primary" disabled={busy || !(ready || none)} onClick={ok}>{busy ? t("送信中…") : classic ? t("merge commit を作って push", undefined, true) : t("決定してクラウドへ送る")}</button>
         </div>
       </div>

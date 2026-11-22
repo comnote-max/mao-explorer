@@ -125,4 +125,4 @@ export const fmtTime = (s: number | null) => (s ? new Date(s * 1000).toLocaleStr
 
 export type Member = { login: string; avatar_url: string; role: string };
 export type Invite = { id: number; login: string; avatar_url: string; role: string };
-export type HistoryEntry = { id: string; message: string; author: string; time: number; local_only: boolean; remote_only: boolean; parents: string[]; refs: string[] };
+export type HistoryEntry = { id: string; message: string; author: string; time: number; local_only: boolean; remote_only: boolean; parents: string[]; refs: string[]; is_me: boolean };

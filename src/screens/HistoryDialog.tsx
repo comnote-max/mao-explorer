@@ -103,14 +103,14 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
                   {" "}{classic && <code className="muted" title={h.parents.length > 1 ? "parents: " + h.parents.map((p) => p.slice(0, 7)).join(" + ") : undefined}>{h.id.slice(0, 7)}</code>} {title(h)}
                   {classic && h.remote_only && <span className="muted small-text">{t("（未 pull）", undefined, true)}</span>}
                 </div>
-                <div className="muted small-text">{when(h.time)}・{h.author}{h.local_only && t("・📤 未送信")}</div>
+                <div className="muted small-text">{when(h.time)}・{!classic && h.is_me ? t("あなた") : h.author}{h.local_only && t("・📤 未送信")}</div>
               </div>
             ))}
           </div>
           <div className="history-detail">
             {sel && <>
               <div className="history-actions">
-                <button disabled={busy || !file || sel.remote_only} onClick={restoreFile} title={t("選んでいるファイルだけを、この時点の中身に戻します")}>{t("↩ このファイルを戻す")}</button>
+                <button disabled={busy || !file || sel.remote_only} onClick={restoreFile} title={t("選んでいるファイルだけを、この時点の中身に戻します")}>{classic ? t("↩ このファイルを戻す") : t("↩ このファイルを、この変更のあとの中身に戻す")}</button>
                 <button disabled={busy || sel.refs.includes("HEAD") || sel.remote_only} onClick={restoreAll} title={t("フォルダ全体をこの時点の状態に戻します（後の履歴は残ります）")}>{t("⏪ フォルダ全体をこの時点に戻す")}</button>
                 <button disabled={busy} onClick={copyFrom} title={t("この時点の状態から、新しい下書きを作ります")}>{t("＋ この時点から下書きを作る")}</button>
               </div>

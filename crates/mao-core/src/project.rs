@@ -970,6 +970,8 @@ pub struct HistoryEntry {
     pub parents: Vec<String>,
     /// この commit を指している印（"HEAD"、"origin/main" など）
     pub refs: Vec<String>,
+    /// 自分が作った記録か（メールアドレスで判定。GitHub 上の名前と Git の名前が違っても同じ人とわかるように）
+    pub is_me: bool,
 }
 
 /// このフォルダの履歴保存の一覧（新しい順）。
@@ -978,6 +980,7 @@ pub fn history(folder: &Path, limit: usize) -> Result<Vec<HistoryEntry>> {
     let branch = branch_of(folder)?;
     let remote = repo.refname_to_id(&format!("refs/remotes/origin/{branch}")).ok();
     let head = repo.head()?.peel_to_commit()?.id();
+    let my_email = repo.signature().ok().and_then(|s| s.email().map(|e| e.to_lowercase()));
     let mut walk = repo.revwalk()?;
     walk.push_head()?;
     if let Some(r) = remote { walk.push(r)?; } // まだ取り込んでいないクラウド側の記録も並べる
@@ -1003,6 +1006,7 @@ pub fn history(folder: &Path, limit: usize) -> Result<Vec<HistoryEntry>> {
             remote_only,
             parents: c.parent_ids().map(|p| p.to_string()).collect(),
             refs,
+            is_me: my_email.is_some() && c.author().email().map(|e| e.to_lowercase()) == my_email,
         });
     }
     Ok(out)
