@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, ChangedFile, MergeView, Project, Request } from "../api";
 import { HELP, T } from "../terms";
 import { PromptDialog } from "./LocalView";
-import { t, LOCALE , tErr } from "../i18n";
+import { t, LOCALE , tErr, classic } from "../i18n";
 
 const branchLabel = (b: string, main: string) => (b === main ? T.mainBranch : b.replace(/^mao\//, ""));
 
@@ -36,7 +36,7 @@ export default function RequestsPanel({ project, requests, canMerge, onClose, on
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-        <h3>{T.pullRequests}</h3>
+        <h3>{classic ? T.pullRequests : t("✉ 改変通知（本体への反映依頼）")}</h3>
         <div className="req-layout">
           <ul className="req-list">
             {requests.length === 0 && <li className="muted">{t("処理待ちの依頼はありません")}</li>}
@@ -61,7 +61,7 @@ export default function RequestsPanel({ project, requests, canMerge, onClose, on
                 {files?.map((f) => (
                   <details key={f.path}>
                     <summary>{f.path}　<span className="add">+{f.additions}</span> <span className="del">-{f.deletions}</span></summary>
-                    <pre className="diff">{f.patch ? f.patch.split("\n").map((l, i) => (
+                    <pre className="diff">{f.patch ? f.patch.split("\n").filter((l) => classic || !(l.startsWith("@@") || l.startsWith("\\ No newline"))).map((l, i) => (
                       <div key={i} className={l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "muted" : ""}>{l}</div>
                     )) : t("（この形式のファイルは差分を表示できません）")}</pre>
                   </details>
@@ -83,7 +83,8 @@ export default function RequestsPanel({ project, requests, canMerge, onClose, on
       {confirming && sel && (
         <div className="modal-bg" onClick={(e) => { e.stopPropagation(); setConfirming(false); }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{t("「{0}」を{1}に反映しますか？", [sel.title, branchLabel(sel.base, project.default_branch), String(sel.number)])}</h3>
+            <h3>{t("この依頼を{0}に反映しますか？", [branchLabel(sel.base, project.default_branch)])}</h3>
+            <p><b>{sel.title}</b></p>
             <p>{t("反映すると{0}の中身が更新されます。ほかの人にもすぐ反映されます。", [branchLabel(sel.base, project.default_branch)])}</p>
             <div className="actions">
               <button onClick={() => setConfirming(false)}>{t("キャンセル")}</button>

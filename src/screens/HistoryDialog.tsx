@@ -21,10 +21,12 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
 
   useEffect(() => {
     // 一覧で選んでいたファイルがあれば、そのファイルが変わった一番新しい時点を最初に選ぶ
-    api.history(folder.path).then(async (l) => {
+    api.history(folder.path).then(async (all) => {
+      // モダンは手元にある履歴だけ。クラシックはまだ取り込んでいない origin 側も並べる
+      const l = classic ? all : all.filter((h) => !h.remote_only);
       setList(l);
       if (prefer) for (const h of l) { const fs = await api.historyFiles(folder.path, h.id).catch(() => [] as Change[]); if (fs.some((x) => x.path === prefer)) { setSel(h); return; } }
-      setSel(l[0] ?? null);
+      setSel(l.find((h) => h.refs.includes("HEAD")) ?? l[0] ?? null);
     }).catch((e) => setErr(tErr(e)));
   }, [folder.path]);
   useEffect(() => {
@@ -36,8 +38,24 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
     if (sel && file) api.historyDiff(folder.path, sel.id, file).then(setDiff).catch(() => setDiff(null));
   }, [sel?.id, file]);
 
+  // クラシック：git log --graph 風の簡易グラフ（列ごとに │ と ●）
+  const graph = (() => {
+    if (!classic || !list) return {} as Record<string, string>;
+    const out: Record<string, string> = {};
+    let lanes: string[] = [];
+    for (const h of list) {
+      let col = lanes.indexOf(h.id);
+      if (col < 0) { lanes.push(h.id); col = lanes.length - 1; }
+      out[h.id] = lanes.map((_, i) => (i === col ? (h.parents.length > 1 ? "◆" : "●") : lanes[i] === h.id ? "┘" : "│")).join(" ");
+      const next = lanes.map((x, i) => (i === col ? h.parents[0] ?? "" : x === h.id ? "" : x));
+      for (const p of h.parents.slice(1)) if (!next.includes(p)) next.push(p);
+      lanes = next.filter((x, i) => x && next.indexOf(x) === i);
+    }
+    return out;
+  })();
   const title = (h: HistoryEntry) => {
     const first = h.message.split("\n")[0];
+    if (classic) return first || "(no message)"; // クラシックは実際の commit message をそのまま出す
     const m = first.match(/^Merge pull request #\d+ from [^/]+\/(?:mao\/)?(.+)$/);
     if (m) return t("「{0}」を{1}に反映", [m[1], T.mainBranch]);
     if (/^Merge (branch|remote-tracking branch)/.test(first)) return t("{0}で取り込み", [T.sync]);
@@ -50,7 +68,8 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
   };
 
   const restoreFile = () => sel && file && act(async () => {
-    if (!window.confirm(t("「{0}」を、{1}「{2}」の時点の中身に戻します。\n\n今の中身は「{3}」していなければ失われますが、履歴保存済みの内容はいつでもこの画面から取り戻せます。", [file, when(sel.time), title(sel), T.commit]))) return;
+    if (!window.confirm(classic ? t("「{0}」を、{1}「{2}」の時点の中身に戻します。\n\n今の中身は「{3}」していなければ失われますが、履歴保存済みの内容はいつでもこの画面から取り戻せます。", [file, when(sel.time), title(sel), T.commit])
+      : t("「{0}」を、{1} の時点の中身に戻します。\n\n今の中身も、すでにクラウドへ送ってあれば、この画面からいつでも取り戻せます。", [file, when(sel.time)]))) return;
     await api.restoreFile(folder.path, sel.id, file);
     onDone(classic ? t("「{0}」を {1} の時点に戻しました。よければ「{2}」してください。", [file, when(sel.time), T.commit])
       : t("「{0}」を {1} の時点に戻しました。", [file, when(sel.time)]));
@@ -70,14 +89,20 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal wide history" onClick={(e) => e.stopPropagation()}>
-        <h3>🕘 {t("履歴")} ― {label}</h3>
+        <h3>🕘 {classic ? t("履歴") : t("巻戻し")} ― {label}</h3>
         {err && <div className="error">{err}</div>}
         <div className="history-body">
           <div className="history-list">
             {!list && <p className="muted">{t("読み込み中…")}</p>}
             {list?.map((h, i) => (
               <div key={h.id} className={"history-item" + (sel?.id === h.id ? " on" : "")} onClick={() => setSel(h)}>
-                <div className="history-title">{i === 0 && <span className="badge">{t("いま")}</span>} {classic && <code className="muted">{h.id.slice(0, 7)}</code>} {title(h)}</div>
+                <div className="history-title">
+                  {classic && <code style={{ color: "var(--accent, #2563eb)", whiteSpace: "pre" }}>{graph[h.id]} </code>}
+                  {!classic && h.refs.includes("HEAD") && <span className="badge">{t("いま")}</span>}
+                  {classic && h.refs.map((r) => <span key={r} className="badge">{r}</span>)}
+                  {" "}{classic && <code className="muted" title={h.parents.length > 1 ? "parents: " + h.parents.map((p) => p.slice(0, 7)).join(" + ") : undefined}>{h.id.slice(0, 7)}</code>} {title(h)}
+                  {classic && h.remote_only && <span className="muted small-text">{t("（未 pull）", undefined, true)}</span>}
+                </div>
                 <div className="muted small-text">{when(h.time)}・{h.author}{h.local_only && t("・📤 未送信")}</div>
               </div>
             ))}
@@ -85,8 +110,8 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
           <div className="history-detail">
             {sel && <>
               <div className="history-actions">
-                <button disabled={busy || !file} onClick={restoreFile} title={t("選んでいるファイルだけを、この時点の中身に戻します")}>{t("↩ このファイルを戻す")}</button>
-                <button disabled={busy || list?.[0]?.id === sel.id} onClick={restoreAll} title={t("フォルダ全体をこの時点の状態に戻します（後の履歴は残ります）")}>{t("⏪ フォルダ全体をこの時点に戻す")}</button>
+                <button disabled={busy || !file || sel.remote_only} onClick={restoreFile} title={t("選んでいるファイルだけを、この時点の中身に戻します")}>{t("↩ このファイルを戻す")}</button>
+                <button disabled={busy || sel.refs.includes("HEAD") || sel.remote_only} onClick={restoreAll} title={t("フォルダ全体をこの時点の状態に戻します（後の履歴は残ります）")}>{t("⏪ フォルダ全体をこの時点に戻す")}</button>
                 <button disabled={busy} onClick={copyFrom} title={t("この時点の状態から、新しい下書きを作ります")}>{t("＋ この時点から下書きを作る")}</button>
               </div>
               <div className="history-files">

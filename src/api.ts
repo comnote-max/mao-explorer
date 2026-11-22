@@ -15,6 +15,7 @@ export type SyncResult =
   | { result: "done"; received: number; sent: number }
   | { result: "need_save"; changes: number }
   | { result: "conflict"; files: string[] };
+export type ConflictFile = { path: string; mine: string | null; theirs: string | null; mine_deleted: boolean; theirs_deleted: boolean };
 export type Capability = { mode: "none" | "request" | "direct"; can_review: boolean; note: string };
 export type Request = {
   number: number; title: string; body: string; author: string; head: string; base: string;
@@ -62,7 +63,7 @@ export const parentOf = (p: string) => {
 /** 日本語名は説明の先頭【…】に入れておく（GitHub の名前は英数字しか使えないため） */
 export const dispName = (p: { name: string; description?: string | null }) => p.description?.match(/^【(.+?)】/)?.[1] ?? p.name;
 export const dispDesc = (p: { description?: string | null }) => (p.description ?? "").replace(/^【.+?】\s*/, "");
-export const baseName = (p: string) => p.split(sep).filter(Boolean).pop() ?? p;
+export const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
 export const api = {
   projects: () => invoke<Project[]>("projects"),
@@ -101,6 +102,10 @@ export const api = {
   sync: (folder: string) => invoke<SyncResult>("sync", { folder }),
   pull: (folder: string) => invoke<SyncResult>("pull", { folder }),
   push: (folder: string) => invoke<SyncResult>("push", { folder }),
+  refresh: (folder: string) => invoke<void>("refresh", { folder }),
+  conflicts: (folder: string, from?: string) => invoke<ConflictFile[]>("conflicts", { folder, from: from ?? null }),
+  resolve: (folder: string, picks: [string, string, string | null][], from?: string) => invoke<SyncResult>("resolve", { folder, picks, from: from ?? null }),
+  updateFromMain: (folder: string, main: string) => invoke<SyncResult>("update_from_main", { folder, main }),
   moveToDraft: (fullName: string, name: string) => invoke<Folder>("move_to_draft", { fullName, name }),
   requests: (fullName: string) => invoke<{ me: string; list: Request[] }>("requests", { fullName }),
   requestFiles: (fullName: string, number: number) => invoke<ChangedFile[]>("request_files", { fullName, number }),
@@ -120,4 +125,4 @@ export const fmtTime = (s: number | null) => (s ? new Date(s * 1000).toLocaleStr
 
 export type Member = { login: string; avatar_url: string; role: string };
 export type Invite = { id: number; login: string; avatar_url: string; role: string };
-export type HistoryEntry = { id: string; message: string; author: string; time: number; local_only: boolean };
+export type HistoryEntry = { id: string; message: string; author: string; time: number; local_only: boolean; remote_only: boolean; parents: string[]; refs: string[] };

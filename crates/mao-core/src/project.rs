@@ -533,11 +533,8 @@ pub fn sync(folder: &Path, login: &str) -> Result<SyncResult> {
         fast_forward(&repo, &branch, up)?;
         received = behind;
     } else if behind > 0 && ahead > 0 {
-        let conflicts = rebase_onto(&repo, up, login)?;
-        if !conflicts.is_empty() {
-            return Ok(SyncResult::Conflict { files: conflicts });
-        }
-        received = behind;
+        // 双方に新しい記録がある：merge で合わせる（ぶつかったら解決画面へ）。commit は書き換えない
+        return merge_or_conflict(folder, login, true);
     }
     let head = repo.head()?.peel_to_commit()?.id();
     let (ahead, _) = repo.graph_ahead_behind(head, up)?;
@@ -565,10 +562,7 @@ pub fn pull(folder: &Path, login: &str) -> Result<SyncResult> {
     if behind > 0 && ahead == 0 {
         fast_forward(&repo, &branch, up)?;
     } else if behind > 0 {
-        let conflicts = rebase_onto(&repo, up, login)?;
-        if !conflicts.is_empty() {
-            return Ok(SyncResult::Conflict { files: conflicts });
-        }
+        return merge_or_conflict(folder, login, false);
     }
     Ok(SyncResult::Done { received: behind, sent: 0 })
 }
@@ -592,6 +586,154 @@ pub fn push_only(folder: &Path) -> Result<SyncResult> {
         push(&repo, &branch, &token)?;
     }
     Ok(SyncResult::Done { received: 0, sent: ahead })
+}
+
+// ---------- ぶつかったときの解決 ----------
+
+/// ぶつかったファイル 1 つ分。文字のファイルでなければ中身は None（どちらかを選ぶだけ）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ConflictFile {
+    pub path: String,
+    /// この PC の内容（None なら PC 側で削除 or 文字でない）
+    pub mine: Option<String>,
+    pub theirs: Option<String>,
+    pub mine_deleted: bool,
+    pub theirs_deleted: bool,
+}
+
+/// 手元（HEAD）とクラウド（origin/同名）を合わせた結果の索引を作る（ファイルは変えない）。
+/// from を指定すると、その branch（例：本体の main）のクラウド側を取り込む。None なら同じ名前の branch。
+fn merge_index(repo: &Repository, from: Option<&str>) -> Result<(git2::Index, git2::Oid, git2::Oid, String)> {
+    let branch = repo.head()?.shorthand().unwrap_or_default().to_string();
+    let head = repo.head()?.peel_to_commit()?;
+    let up = repo.refname_to_id(&format!("refs/remotes/origin/{}", from.unwrap_or(&branch)))?;
+    let theirs = repo.find_commit(up)?;
+    let idx = repo.merge_commits(&head, &theirs, None)?;
+    Ok((idx, head.id(), up, branch))
+}
+
+fn blob_text(repo: &Repository, e: &Option<git2::IndexEntry>) -> Option<String> {
+    let e = e.as_ref()?;
+    let b = repo.find_blob(e.id).ok()?;
+    if b.is_binary() { return None; }
+    String::from_utf8(b.content().to_vec()).ok()
+}
+
+/// ぶつかっているファイルの一覧と、両方の中身。
+pub fn conflicts(folder: &Path) -> Result<Vec<ConflictFile>> {
+    conflicts_from(folder, None)
+}
+
+pub fn conflicts_from(folder: &Path, from: Option<&str>) -> Result<Vec<ConflictFile>> {
+    let repo = Repository::open(folder)?;
+    let (idx, ..) = merge_index(&repo, from)?;
+    let mut out = Vec::new();
+    for c in idx.conflicts()? {
+        let c = c?;
+        let any = c.our.as_ref().or(c.their.as_ref()).or(c.ancestor.as_ref());
+        let path = any.map(|e| String::from_utf8_lossy(&e.path).to_string()).unwrap_or_default();
+        out.push(ConflictFile {
+            mine: blob_text(&repo, &c.our),
+            theirs: blob_text(&repo, &c.their),
+            mine_deleted: c.our.is_none(),
+            theirs_deleted: c.their.is_none(),
+            path,
+        });
+    }
+    Ok(out)
+}
+
+/// 選んだ内容でぶつかりを解決し、クラウドの更新を取り込んだ記録（merge commit）を作って送る。
+/// picks: (パス, "mine" | "theirs" | "edit", edit のときの本文)
+pub fn resolve(folder: &Path, picks: &[(String, String, Option<String>)], from: Option<&str>, login: &str) -> Result<SyncResult> {
+    resolve_from(folder, picks, login, true, from)
+}
+
+fn resolve_inner(folder: &Path, picks: &[(String, String, Option<String>)], login: &str, send: bool) -> Result<SyncResult> {
+    resolve_from(folder, picks, login, send, None)
+}
+
+/// 下書きに本体（main）の最新を取り込む。ぶつかったら Conflict を返す（解決画面で from=main として解決）。
+pub fn update_from_main(folder: &Path, main: &str, login: &str) -> Result<SyncResult> {
+    let repo = Repository::open(folder)?;
+    let n = changes_of(&repo)?.len();
+    if n > 0 {
+        return Ok(SyncResult::NeedSave { changes: n });
+    }
+    fetch(&repo, &crate::github::token()?)?;
+    let head = repo.head()?.peel_to_commit()?.id();
+    let up = repo.refname_to_id(&format!("refs/remotes/origin/{main}"))?;
+    if head == up || repo.graph_descendant_of(head, up)? {
+        return Ok(SyncResult::Done { received: 0, sent: 0 });
+    }
+    let c = conflicts_from(folder, Some(main))?;
+    if !c.is_empty() {
+        return Ok(SyncResult::Conflict { files: c.into_iter().map(|f| f.path).collect() });
+    }
+    resolve_from(folder, &[], login, true, Some(main))
+}
+
+fn resolve_from(folder: &Path, picks: &[(String, String, Option<String>)], login: &str, send: bool, from: Option<&str>) -> Result<SyncResult> {
+    let repo = Repository::open(folder)?;
+    let n = changes_of(&repo)?.len();
+    if n > 0 {
+        return Ok(SyncResult::NeedSave { changes: n });
+    }
+    let token = crate::github::token()?;
+    fetch(&repo, &token)?;
+    let (mut idx, head, up, branch) = merge_index(&repo, from)?;
+    let list: Vec<_> = idx.conflicts()?.collect::<std::result::Result<Vec<_>, _>>()?;
+    for c in list {
+        let path = match c.our.as_ref().or(c.their.as_ref()).or(c.ancestor.as_ref()) {
+            Some(e) => String::from_utf8_lossy(&e.path).to_string(),
+            None => continue,
+        };
+        let Some((_, how, text)) = picks.iter().find(|(p, ..)| *p == path) else {
+            return user("ぶつかっているファイルすべてについて、どちらを残すか選んでください");
+        };
+        idx.remove_path(Path::new(&path))?;
+        let chosen = match how.as_str() {
+            "mine" => c.our,
+            "theirs" => c.their,
+            _ => {
+                let Some(mut e) = c.our.or(c.their).or(c.ancestor) else { continue };
+                let body = text.as_deref().unwrap_or_default();
+                if body.lines().any(|l| l.starts_with("<<<<<<<") || l.starts_with(">>>>>>>") || l == "=======" || l.starts_with("======= ")) {
+                    return user("「<<<<<<<」などの衝突の印が残っています。取り除いてから送ってください");
+                }
+                e.id = repo.blob(body.as_bytes())?;
+                e.file_size = body.len() as u32;
+                e.mode = if e.mode == 0 { 0o100644 } else { e.mode };
+                Some(e)
+            }
+        };
+        if let Some(mut e) = chosen {
+            e.flags &= !0x3000; // 衝突の段（stage）を外して通常の項目にする
+            idx.add(&e)?;
+        }
+    }
+    if idx.has_conflicts() {
+        return user("ぶつかっているファイルすべてについて、どちらを残すか選んでください");
+    }
+    let tree = repo.find_tree(idx.write_tree_to(&repo)?)?;
+    let sig = signature(&repo, login)?;
+    let (h, u) = (repo.find_commit(head)?, repo.find_commit(up)?);
+    let id = repo.commit(None, &sig, &sig, &format!("Merge remote-tracking branch 'origin/{}'", from.unwrap_or(&branch)), &tree, &[&h, &u])?;
+    repo.reference(&format!("refs/heads/{branch}"), id, true, "resolve conflicts")?;
+    repo.checkout_head(Some(CheckoutBuilder::new().force()))?;
+    if send {
+        push(&repo, &branch, &token)?;
+    }
+    let behind = repo.graph_ahead_behind(head, up)?.1;
+    Ok(SyncResult::Done { received: behind, sent: usize::from(send) })
+}
+
+fn merge_or_conflict(folder: &Path, login: &str, send: bool) -> Result<SyncResult> {
+    let c = conflicts(folder)?;
+    if c.is_empty() {
+        return resolve_inner(folder, &[], login, send);
+    }
+    Ok(SyncResult::Conflict { files: c.into_iter().map(|f| f.path).collect() })
 }
 
 /// 送信だけ行う（反映依頼の前など）。
@@ -624,6 +766,7 @@ fn fast_forward(repo: &Repository, branch: &str, target: git2::Oid) -> Result<()
 }
 
 /// 自分の保存を相手の上に積み直す。ぶつかったら中止して元に戻し、対象ファイルを返す。
+#[allow(dead_code)] // 以前の同期方式（積み直し）。今は merge で合わせる
 fn rebase_onto(repo: &Repository, upstream: git2::Oid, login: &str) -> Result<Vec<String>> {
     repo.index()?.read(true)?;
     let up = repo.find_annotated_commit(upstream)?;
@@ -821,6 +964,12 @@ pub struct HistoryEntry {
     pub time: i64,
     /// このPCだけにあり、まだ GitHub に送っていない
     pub local_only: bool,
+    /// クラウドだけにあり、まだ取り込んでいない
+    pub remote_only: bool,
+    /// 親 commit（merge なら 2 つ）
+    pub parents: Vec<String>,
+    /// この commit を指している印（"HEAD"、"origin/main" など）
+    pub refs: Vec<String>,
 }
 
 /// このフォルダの履歴保存の一覧（新しい順）。
@@ -828,9 +977,11 @@ pub fn history(folder: &Path, limit: usize) -> Result<Vec<HistoryEntry>> {
     let repo = Repository::open(folder)?;
     let branch = branch_of(folder)?;
     let remote = repo.refname_to_id(&format!("refs/remotes/origin/{branch}")).ok();
+    let head = repo.head()?.peel_to_commit()?.id();
     let mut walk = repo.revwalk()?;
     walk.push_head()?;
-    walk.set_sorting(git2::Sort::TIME)?;
+    if let Some(r) = remote { walk.push(r)?; } // まだ取り込んでいないクラウド側の記録も並べる
+    walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
     let mut out = vec![];
     for id in walk.take(limit) {
         let id = id?;
@@ -839,12 +990,19 @@ pub fn history(folder: &Path, limit: usize) -> Result<Vec<HistoryEntry>> {
             Some(r) => r != id && !repo.graph_descendant_of(r, id).unwrap_or(false),
             None => true,
         };
+        let remote_only = head != id && !repo.graph_descendant_of(head, id).unwrap_or(false);
+        let mut refs = vec![];
+        if id == head { refs.push("HEAD".to_string()); }
+        if Some(id) == remote { refs.push(format!("origin/{branch}")); }
         out.push(HistoryEntry {
             id: id.to_string(),
             message: c.message().unwrap_or_default().trim().to_string(),
             author: c.author().name().unwrap_or_default().to_string(),
             time: c.time().seconds(),
             local_only,
+            remote_only,
+            parents: c.parent_ids().map(|p| p.to_string()).collect(),
+            refs,
         });
     }
     Ok(out)

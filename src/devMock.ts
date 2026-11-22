@@ -224,7 +224,7 @@ if (enabled) {
     document.body.appendChild(d);
   };
   window.alert = (m?: any) => toast("【お知らせ】", String(m ?? ""));
-  window.confirm = (m?: any) => { toast("【確認画面が出て、OK を押しました】", String(m ?? "")); return true; };
+  window.confirm = (m?: any) => { toast("【テスト環境：確認ダイアログは自動で OK になります】", String(m ?? "")); return true; };
   window.prompt = (m?: any, def?: string) => { toast("【入力画面（テストでは既定値のまま）】", String(m ?? "")); return def ?? ""; };
   let cb = 0;
   (window as any).__TAURI_INTERNALS__ = {

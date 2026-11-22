@@ -126,6 +126,7 @@ export default function App() {
         <div className={"tree-item" + (loc?.kind === "github" ? " active" : "")} onClick={() => { go({ kind: "github" }); setOpen({ ...open, github: true }); }}>
           <span onClick={(e) => { e.stopPropagation(); setOpen({ ...open, github: !open.github }); }}>{open.github ? "▾" : "▸"}</span> 🐙 {T.cloud}
         </div>
+        {open.github && account && !projects && <div className="tree-item muted" style={{ paddingLeft: 22 }}>{t("読み込み中…")}</div>}
         {open.github && account && projects?.map((p) => (
           <ProjectNode key={p.full_name} project={p} active={isProject(p.full_name)}
             current={loc?.kind === "project" && loc.project.full_name === p.full_name ? loc.path ?? null : null}

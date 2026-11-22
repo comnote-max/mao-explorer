@@ -298,3 +298,5 @@ body.dragging-files, body.dragging-files * { cursor: copy !important; user-selec
 /* 通知は画面に重ねて出す（下の一覧がずれて押し間違えないように） */
 .banner.toast { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 9; max-width: min(720px, 92vw); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px #0003; }
 .banner.info { color: var(--accent); }
+.changes label { display: flex; align-items: center; gap: 6px; margin: 0; }
+.changes label input[type="checkbox"] { width: auto; margin: 0; flex: none; }

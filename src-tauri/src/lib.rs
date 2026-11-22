@@ -214,6 +214,24 @@ async fn move_to_draft(full_name: String, name: String) -> R<pj::Folder> {
     blocking(move || pj::move_to_draft(&full_name, &name, &me)).await
 }
 #[tauri::command]
+async fn refresh(folder: PathBuf) -> R<()> {
+    blocking(move || pj::refresh(&folder)).await
+}
+#[tauri::command]
+async fn conflicts(folder: PathBuf, from: Option<String>) -> R<Vec<pj::ConflictFile>> {
+    blocking(move || pj::conflicts_from(&folder, from.as_deref())).await
+}
+#[tauri::command]
+async fn resolve(folder: PathBuf, picks: Vec<(String, String, Option<String>)>, from: Option<String>) -> R<pj::SyncResult> {
+    let me = login().await?;
+    blocking(move || pj::resolve(&folder, &picks, from.as_deref(), &me)).await
+}
+#[tauri::command]
+async fn update_from_main(folder: PathBuf, main: String) -> R<pj::SyncResult> {
+    let me = login().await?;
+    blocking(move || pj::update_from_main(&folder, &main, &me)).await
+}
+#[tauri::command]
 async fn push(folder: PathBuf) -> R<pj::SyncResult> {
     blocking(move || pj::push_only(&folder)).await
 }
@@ -368,8 +386,143 @@ fn fs_reveal(path: PathBuf) -> R<()> {
     tauri_plugin_opener::reveal_item_in_dir(path).map_err(s)
 }
 
+/// 開発用ブリッジ：MAO_BRIDGE=1 で起動したデバッグ版だけ、127.0.0.1:1430 で
+/// ブラウザ（http://localhost:1420/?bridge）から本物のコマンドを呼べるようにする。テストの自動操作用。
+#[cfg(debug_assertions)]
+mod bridge {
+    use super::*;
+    use serde_json::{from_value, to_value, Value};
+    use std::io::{Read, Write};
+
+    fn g<T: serde::de::DeserializeOwned>(a: &Value, k: &str) -> R<T> {
+        from_value(a.get(k).cloned().unwrap_or(Value::Null)).map_err(|e| format!("{k}: {e}"))
+    }
+    fn v<T: Serialize>(x: T) -> R<Value> { to_value(x).map_err(s) }
+
+    async fn dispatch(cmd: &str, a: Value) -> R<Value> {
+        match cmd {
+            "auth_account" => v(auth_account().await?),
+            "login_start" => v(login_start().await?),
+            "login_poll" => v(login_poll(g(&a, "deviceCode")?, g(&a, "interval")?).await?),
+            "logout" => v(logout()?),
+            "projects" => v(projects().await?),
+            "create_project" => v(create_project(g(&a, "name")?, g(&a, "private")?, g(&a, "description")?).await?),
+            "project_info" => v(project_info(g(&a, "fullName")?).await?),
+            "set_private" => v(set_private(g(&a, "fullName")?, g(&a, "private")?).await?),
+            "members" => v(members(g(&a, "fullName")?).await?),
+            "invites" => v(invites(g(&a, "fullName")?).await?),
+            "invite" => v(invite(g(&a, "fullName")?, g(&a, "login")?, g(&a, "role")?).await?),
+            "cancel_invite" => v(cancel_invite(g(&a, "fullName")?, g(&a, "id")?).await?),
+            "remove_member" => v(remove_member(g(&a, "fullName")?, g(&a, "login")?).await?),
+            "capability" => v(capability(g(&a, "fullName")?).await?),
+            "browse_remote" => v(browse_remote(g(&a, "fullName")?, g(&a, "path")?, g(&a, "gitRef")?).await?),
+            "read_remote" => v(read_remote(g(&a, "fullName")?, g(&a, "path")?, g(&a, "gitRef")?).await?),
+            "readme" => v(readme(g(&a, "fullName")?).await?),
+            "default_root" => v(default_root(g(&a, "name")?)),
+            "open_in_desktop" => v(false),
+            "master_dir" => v(master_dir()),
+            "set_master_dir" => v(set_master_dir(g(&a, "dir")?)?),
+            "first_sync" => v(first_sync(g(&a, "fullName")?, g(&a, "defaultBranch")?, g(&a, "root")?).await?),
+            "folders" => v(folders(g(&a, "fullName")?).await?),
+            "create_folder" => v(create_folder(g(&a, "fullName")?, g(&a, "name")?, g(&a, "from")?, g(&a, "at")?).await?),
+            "history" => v(history(g(&a, "folder")?).await?),
+            "history_files" => v(history_files(g(&a, "folder")?, g(&a, "id")?).await?),
+            "history_diff" => v(history_diff(g(&a, "folder")?, g(&a, "id")?, g(&a, "rel")?).await?),
+            "restore_file" => v(restore_file(g(&a, "folder")?, g(&a, "id")?, g(&a, "rel")?).await?),
+            "restore_all" => v(restore_all(g(&a, "folder")?, g(&a, "id")?).await?),
+            "remove_folder" => v(remove_folder(g(&a, "fullName")?, g(&a, "folder")?, g(&a, "remote")?).await?),
+            "list_local" => v(list_local(g(&a, "folder")?, g(&a, "rel")?).await?),
+            "file_diff" => v(file_diff(g(&a, "folder")?, g(&a, "rel")?).await?),
+            "changes" => v(changes(g(&a, "folder")?).await?),
+            "save" => v(save(g(&a, "folder")?, g(&a, "message")?, g(&a, "files")?).await?),
+            "sync" => v(sync(g(&a, "folder")?).await?),
+            "pull" => v(pull(g(&a, "folder")?).await?),
+            "push" => v(push(g(&a, "folder")?).await?),
+            "refresh" => v(refresh(g(&a, "folder")?).await?),
+            "conflicts" => v(conflicts(g(&a, "folder")?, g(&a, "from")?).await?),
+            "resolve" => v(resolve(g(&a, "folder")?, g(&a, "picks")?, g(&a, "from")?).await?),
+            "update_from_main" => v(update_from_main(g(&a, "folder")?, g(&a, "main")?).await?),
+            "move_to_draft" => v(move_to_draft(g(&a, "fullName")?, g(&a, "name")?).await?),
+            "requests" => v(requests(g(&a, "fullName")?).await?),
+            "request_files" => v(request_files(g(&a, "fullName")?, g(&a, "number")?).await?),
+            "send_request" => v(send_request(g(&a, "fullName")?, g(&a, "folder")?, g(&a, "title")?, g(&a, "message")?).await?),
+            "merge_folder" => v(merge_folder(g(&a, "fullName")?, g(&a, "folder")?, g(&a, "title")?).await?),
+            "merge_request" => v(merge_request(g(&a, "fullName")?, g(&a, "number")?, g(&a, "base")?).await?),
+            "request_changes" => v(request_changes(g(&a, "fullName")?, g(&a, "number")?, g(&a, "message")?).await?),
+            "fs_places" => v(fs_places()),
+            "fs_list" => v(fs_list(g(&a, "path")?, g(&a, "showHidden")?).await?),
+            "fs_new_folder" => v(fs_new_folder(g(&a, "dir")?, g(&a, "name")?).await?),
+            "fs_new_file" => v(fs_new_file(g(&a, "dir")?, g(&a, "name")?).await?),
+            "fs_rename" => v(fs_rename(g(&a, "path")?, g(&a, "name")?).await?),
+            "fs_delete" => v(fs_delete(g(&a, "paths")?).await?),
+            "fs_copy" => v(fs_copy(g(&a, "paths")?, g(&a, "dest")?).await?),
+            "fs_move" => v(fs_move(g(&a, "paths")?, g(&a, "dest")?).await?),
+            "fs_read_text" => v(fs_read_text(g(&a, "path")?).await?),
+            "fs_reveal" => v(()),
+            // ブラウザ内の簡易エディタで保存する（ブリッジ専用）
+            "fs_write_text" => v(std::fs::write(g::<PathBuf>(&a, "path")?, g::<String>(&a, "text")?).map_err(s)?),
+            _ => Err(format!("ブリッジ未対応のコマンド: {cmd}")),
+        }
+    }
+
+    const ORIGIN: &str = "http://localhost:1420";
+
+    fn handle(mut st: std::net::TcpStream) {
+        let mut buf = Vec::new();
+        let mut tmp = [0u8; 8192];
+        let head_end = loop {
+            let n = match st.read(&mut tmp) { Ok(0) | Err(_) => return, Ok(n) => n };
+            buf.extend_from_slice(&tmp[..n]);
+            if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") { break i + 4; }
+            if buf.len() > 1 << 20 { return; }
+        };
+        let head = String::from_utf8_lossy(&buf[..head_end]).to_string();
+        let mut lines = head.lines();
+        let first = lines.next().unwrap_or_default().to_string();
+        let mut len = 0usize;
+        let mut origin = String::new();
+        let mut marked = false;
+        for l in lines {
+            let (k, val) = l.split_once(':').map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string())).unwrap_or_default();
+            match k.as_str() { "content-length" => len = val.parse().unwrap_or(0), "origin" => origin = val, "x-mao-bridge" => marked = val == "1", _ => {} }
+        }
+        while buf.len() < head_end + len {
+            let n = match st.read(&mut tmp) { Ok(0) | Err(_) => break, Ok(n) => n };
+            buf.extend_from_slice(&tmp[..n]);
+        }
+        let cors = format!("Access-Control-Allow-Origin: {ORIGIN}\r\nAccess-Control-Allow-Headers: content-type, x-mao-bridge\r\nAccess-Control-Allow-Methods: POST\r\n");
+        let mut parts = first.split_whitespace();
+        let (method, path) = (parts.next().unwrap_or_default(), parts.next().unwrap_or_default());
+        if method == "OPTIONS" {
+            let _ = st.write_all(format!("HTTP/1.1 204 No Content\r\n{cors}Content-Length: 0\r\n\r\n").as_bytes());
+            return;
+        }
+        // 開発中のページ以外からは受け付けない
+        if method != "POST" || origin != ORIGIN || !marked || !path.starts_with("/invoke/") {
+            let _ = st.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
+            return;
+        }
+        let cmd = path.trim_start_matches("/invoke/").to_string();
+        let args: Value = serde_json::from_slice(&buf[head_end..]).unwrap_or(Value::Null);
+        let res = tauri::async_runtime::block_on(dispatch(&cmd, args));
+        let body = match res { Ok(x) => serde_json::json!({ "ok": x }), Err(e) => serde_json::json!({ "err": e }) }.to_string();
+        let _ = st.write_all(format!("HTTP/1.1 200 OK\r\n{cors}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len()).as_bytes());
+    }
+
+    pub fn start() {
+        if std::env::var("MAO_BRIDGE").ok().as_deref() != Some("1") { return; }
+        std::thread::spawn(|| {
+            let Ok(l) = std::net::TcpListener::bind("127.0.0.1:1430") else { eprintln!("[bridge] 1430 番を使えません"); return; };
+            eprintln!("[bridge] http://127.0.0.1:1430 で待機中");
+            for st in l.incoming().flatten() { std::thread::spawn(move || handle(st)); }
+        });
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(debug_assertions)]
+    bridge::start();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -377,7 +530,7 @@ pub fn run() {
             projects, create_project, project_info, capability, browse_remote, read_remote, readme, default_root, master_dir, set_master_dir, open_in_desktop, first_sync,
             folders, create_folder, history, history_files, history_diff, restore_file, restore_all,
             set_private, members, invites, invite, cancel_invite, remove_member,
-            remove_folder, list_local, changes, save, sync, pull, push, move_to_draft,
+            remove_folder, list_local, changes, save, sync, pull, push, move_to_draft, conflicts, resolve, refresh, update_from_main,
             requests, request_files, send_request, merge_folder, merge_request, request_changes,
             fs_places, fs_list, fs_new_folder, fs_new_file, fs_rename, fs_delete, fs_copy, fs_move, fs_open, fs_reveal, fs_read_text, file_diff
         ])
