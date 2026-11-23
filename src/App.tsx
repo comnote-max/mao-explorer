@@ -5,6 +5,7 @@ import ProjectList from "./screens/ProjectList";
 import ProjectScreen from "./screens/ProjectScreen";
 import FileBrowser from "./screens/FileBrowser";
 import PcView from "./screens/PcView";
+import AppMenu from "./screens/AppMenu";
 import Settings from "./screens/Settings";
 import { ProjectNode, TreeNode } from "./screens/FolderTree";
 import { api, baseName, dispName, fsApi, Place, Project } from "./api";
@@ -168,7 +169,6 @@ export default function App() {
               <button className="small" onClick={() => invoke("logout").then(() => { setAccount(null); setProjects(null); if (loc?.kind !== "fs") setLoc({ kind: "github" }); })}>{T.logout}</button>
             </>
           ) : <span className="muted">{t("GitHub 未接続")}</span>}
-          <button className="icon settings-btn" title={t("設定")} onClick={() => setSettings(true)}>⚙</button>
         </div>
         {settings && <Settings onClose={() => setSettings(false)} />}
       </aside>
@@ -182,6 +182,8 @@ export default function App() {
             </div>
           ))}
           <button className="icon" title={t("新しいタブ（Ctrl+T）")} onClick={() => newTab()}>＋</button>
+          <span className="grow" />
+          <AppMenu onSettings={() => setSettings(true)} />
         </div>
         {loc?.kind === "fs" && <FileBrowser key={tab!.id} path={loc.path} onPathChange={(path) => setLoc({ kind: "fs", path })}
           canOuterBack={canBack} outerBack={goBack} outerUp={() => go({ kind: "pc" })} />}

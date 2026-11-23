@@ -300,3 +300,16 @@ body.dragging-files, body.dragging-files * { cursor: copy !important; user-selec
 .banner.info { color: var(--accent); }
 .changes label { display: flex; align-items: center; gap: 6px; margin: 0; }
 .changes label input[type="checkbox"] { width: auto; margin: 0; flex: none; }
+/* 同期まわりのボタンは折り返しで離ればなれにならないよう、ひとまとまりにする */
+#proj-head-slot { display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap; flex: none; }
+/* maociva 共通メニュー（☰） */
+.app-menu { position: relative; align-self: center; margin: 0 4px 4px; }
+.app-menu-btn { position: relative; font-size: 16px; }
+.app-menu .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #e53935; margin-left: 4px; vertical-align: top; }
+.app-menu-btn .dot { position: absolute; top: 2px; right: 2px; margin: 0; }
+.app-menu-list { position: fixed; right: 8px; top: 34px; min-width: 260px; max-width: 320px; z-index: 1000; }
+.app-menu-head { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: default !important; }
+.app-menu-head:hover { background: none !important; }
+.app-menu-promo { margin: 6px; padding: 8px 10px !important; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line); white-space: normal; }
+.tabbar .grow { flex: 1; }
+.app-menu-promo, .app-menu-promo * { white-space: normal !important; overflow-wrap: anywhere; }

@@ -93,7 +93,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   const run = async (label: string, f: () => Promise<void>) => {
     setBusy(label);
     setMessage(null);
-    try { await f(); } catch (e) { setMessage({ kind: "error", text: (classic ? t("{0} に失敗しました：{1}", [label, tErr(e)], true) : t("{0}に失敗しました：{1}（このPCのファイルは消えていません）", [label, tErr(e)])) }); }
+    try { await f(); } catch (e) { const em = String((e as Error)?.message ?? e); if (/commit はできました|はできましたが/.test(em)) { setMessage({ kind: "warn", text: em }); return; } setMessage({ kind: "error", text: (classic ? t("{0} に失敗しました：{1}", [label, tErr(e)], true) : t("{0}に失敗しました：{1}（このPCのファイルは消えていません）", [label, tErr(e)])) }); }
     finally { setBusy(null); await loadFolders().catch(() => {}); loadChanges(); loadRequests(); }
   };
 
@@ -162,7 +162,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
     const r = await api.updateFromMain(folder.path, project.default_branch);
     if (r.result === "conflict") { setConflictFrom(project.default_branch); setDialog("conflict"); }
     else if (r.result === "need_save") setMessage({ kind: "warn", text: t("まだ送っていない変更があります。先に「⟳ 同期」してから取り込んでください。") });
-    else setMessage({ kind: "ok", text: r.received || r.sent ? (classic ? t("origin/{0} を merge しました。", [project.default_branch], true) : t("本体の最新の内容を、この下書きに取り込みました。")) : (classic ? t("すでに origin/{0} を含んでいます。", [project.default_branch], true) : t("この下書きには、本体の最新の内容がすでに入っています。")) });
+    else setMessage({ kind: "ok", text: r.received || r.sent ? (classic ? t("origin/{0} を merge し、merge commit を origin/{1} に push しました。", [project.default_branch, folder.branch], true) : t("本体の最新の内容を、この下書きに取り込みました。")) : (classic ? t("すでに origin/{0} を含んでいます。", [project.default_branch], true) : t("この下書きには、本体の最新の内容がすでに入っています。")) });
     await loadFolders().catch(() => {}); loadChanges();
   });
   const [paused, setPaused] = useState(false); // 「今は送らない」：次に自分で同期するまで自動では送らない
@@ -219,6 +219,8 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
   // 1 分ごとにクラウドの状態を確認（↑↓ の件数を新しく保つ）
   useEffect(() => {
     if (!folder) return;
+    const tick = () => { if (!document.hidden) api.refresh(folder.path).then(() => loadFolders()).catch(() => {}); };
+    tick(); // 開いたときにもすぐ確認する
     const h = window.setInterval(() => { if (!document.hidden) api.refresh(folder.path).then(() => loadFolders()).catch(() => {}); }, 60_000);
     return () => window.clearInterval(h);
   }, [folder?.path]);
@@ -313,8 +315,8 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
       {classic && <button className={nChanges ? "primary" : ""} onClick={() => setDialog("save")} disabled={!!busy || !nChanges} title={HELP.commit}>📝 Commit…</button>}
       {folder && !folder.is_main && (
         <button onClick={doUpdateFromMain} disabled={!!busy}
-          title={classic ? t("origin/{0} をこの branch に merge します（conflict したら解決画面を開きます）", [project.default_branch], true) : t("本体のいちばん新しい内容を、この下書きに取り込みます。同じ所が変わっていたら、どちらを残すか選べます")}>
-          {classic ? t("⬇ {0} を merge", [project.default_branch], true) : t("⬇ 本体 → この下書きへ取り込む")}
+          title={classic ? t("origin/{0} をこの branch に merge し、merge commit を push します（conflict したら解決画面を開きます）", [project.default_branch], true) : t("本体のいちばん新しい内容を、この下書きに取り込みます。同じ所が変わっていたら、どちらを残すか選べます")}>
+          {classic ? t("⬇ origin/{0} を merge", [project.default_branch], true) : t("⬇ 本体 → この下書きへ取り込む")}
         </button>)}
       <button onClick={() => setDialog("history")} disabled={!!busy || !folder} title={HELP.history}>{classic ? t("🕘 履歴") : t("🕘 巻戻し")}</button>
       {folder && !folder.is_main && cap?.mode === "request" && (
@@ -356,7 +358,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
         rootLabel={tagOf(folder)}
         gitRoot={folder.path} gitChanges={changes} extraTools={gitTools}
         extraStatus={<>{statusText}{mergeText && `　｜　${mergeText}`}</>}
-        onMutate={loadChanges} />
+        onMutate={loadChanges} onRefresh={() => { loadChanges(); api.refresh(folder.path).then(() => loadFolders()).catch(() => {}); }} />
 
       {dialog === "conflict" && folder && (
         <ConflictDialog folder={folder.path} from={conflictFrom ?? undefined} onClose={() => { setDialog(null); setConflictFrom(null); }}
@@ -381,7 +383,7 @@ export default function LocalView({ project, cap, path, onPathChange, canBack, o
                 await api.save(folder.path, msg, files);
                 // commit は済んだ。送信の失敗はそれと分けて伝える
                 const r = await (classic ? api.push(folder.path) : api.sync(folder.path)).catch((e) => {
-                  throw new Error(classic ? t("commit はできました（未 push）。push は拒否されました：{0}　先に Pull してください。", [tErr(e)], true) : t("{0}はできましたが、クラウドへの送信に失敗しました：{1}", [T.commit, tErr(e)]));
+                  throw new Error(classic ? t("commit はできました（未 push）。push は拒否されました：{0}", [tErr(e)], true) : t("{0}はできましたが、クラウドへの送信に失敗しました：{1}", [T.commit, tErr(e)]));
                 });
                 if (r.result === "conflict") { setMessage({ kind: "error", text: t("{0}しましたが、ほかの人が同じ箇所を変更しています（{1}）。あなたの変更はそのまま残しています。", [T.commit, r.files.join("、")]) }); setDialog("conflict"); }
                 else if (r.result === "need_save") setMessage({ kind: "warn", text: t("{0}しました。選ばなかった変更が {1} 件残っているため、まだ送っていません。", [T.commit, r.changes]) });

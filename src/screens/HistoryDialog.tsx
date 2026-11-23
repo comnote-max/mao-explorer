@@ -99,7 +99,7 @@ export default function HistoryDialog({ folder, prefer, label, hasChanges, onClo
                 <div className="history-title">
                   {classic && <code style={{ color: "var(--accent, #2563eb)", whiteSpace: "pre" }}>{graph[h.id]} </code>}
                   {!classic && h.refs.includes("HEAD") && <span className="badge">{t("いま")}</span>}
-                  {classic && h.refs.map((r) => <span key={r} className="badge">{r}</span>)}
+                  {classic && h.refs.map((r) => <span key={r} className="badge">{r === "HEAD" ? `HEAD -> ${folder.branch}` : r}</span>)}
                   {" "}{classic && <code className="muted" title={h.parents.length > 1 ? "parents: " + h.parents.map((p) => p.slice(0, 7)).join(" + ") : undefined}>{h.id.slice(0, 7)}</code>} {title(h)}
                   {classic && h.remote_only && <span className="muted small-text">{t("（未 pull）", undefined, true)}</span>}
                 </div>

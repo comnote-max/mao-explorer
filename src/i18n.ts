@@ -1,16 +1,39 @@
 // 多言語対応。原文（日本語）をそのままキーにする方式。
 // 訳がない言葉は日本語のまま表示されるので、言語を足すときは locales/<code>.json を作って LANGS に足すだけ。
 // 文中の {0} {1} … は差し込む値（人名・件数など）。訳文でも同じ番号を使う。
-import en from "./locales/en.json";
 import classicWords from "./locales/classic.json";
 
+/** 対応言語（maociva 共通の 20 言語）。訳は locales/<code>.json。無い言葉は英語→日本語の順に使う */
 export const LANGS = [
   { code: "ja", name: "日本語", locale: "ja-JP" },
   { code: "en", name: "English", locale: "en-US" },
+  { code: "zh-Hans", name: "简体中文", locale: "zh-CN" },
+  { code: "zh-Hant", name: "繁體中文", locale: "zh-TW" },
+  { code: "ko", name: "한국어", locale: "ko-KR" },
+  { code: "es", name: "Español", locale: "es-ES" },
+  { code: "fr", name: "Français", locale: "fr-FR" },
+  { code: "de", name: "Deutsch", locale: "de-DE" },
+  { code: "it", name: "Italiano", locale: "it-IT" },
+  { code: "pt-BR", name: "Português (Brasil)", locale: "pt-BR" },
+  { code: "ru", name: "Русский", locale: "ru-RU" },
+  { code: "uk", name: "Українська", locale: "uk-UA" },
+  { code: "pl", name: "Polski", locale: "pl-PL" },
+  { code: "nl", name: "Nederlands", locale: "nl-NL" },
+  { code: "tr", name: "Türkçe", locale: "tr-TR" },
+  { code: "ar", name: "العربية", locale: "ar" },
+  { code: "hi", name: "हिन्दी", locale: "hi-IN" },
+  { code: "id", name: "Bahasa Indonesia", locale: "id-ID" },
+  { code: "th", name: "ไทย", locale: "th-TH" },
+  { code: "vi", name: "Tiếng Việt", locale: "vi-VN" },
 ] as const;
 export type Lang = (typeof LANGS)[number]["code"];
 
-const DICTS: Partial<Record<Lang, Record<string, string>>> = { en };
+const files = import.meta.glob<Record<string, string>>("./locales/*.json", { eager: true, import: "default" });
+const DICTS: Partial<Record<Lang, Record<string, string>>> = {};
+for (const [path, d] of Object.entries(files)) {
+  const code = path.replace(/^.*\/|\.json$/g, "");
+  if (code !== "classic") DICTS[code as Lang] = d;
+}
 
 const KEY = "mao.lang";
 const detect = (): Lang => {
@@ -19,7 +42,9 @@ const detect = (): Lang => {
     if (s && LANGS.some((l) => l.code === s)) return s as Lang;
   } catch { /* 読めなければ OS の言語 */ }
   const nav = (navigator.language || "en").toLowerCase();
-  return (LANGS.find((l) => nav.startsWith(l.code))?.code ?? "en") as Lang;
+  if (nav.startsWith("zh")) return /tw|hk|mo|hant/.test(nav) ? "zh-Hant" : "zh-Hans";
+  if (nav.startsWith("pt")) return "pt-BR";
+  return (LANGS.find((l) => nav.startsWith(l.code.toLowerCase()))?.code ?? "en") as Lang;
 };
 
 export const lang: Lang = detect();
@@ -36,7 +61,7 @@ const toClassic = (s: string) => WORDS.reduce((r, [a, b]) => r.split(a).join(b),
 const PHRASES: Record<string, string> = classic ? ((classicWords as unknown as { phrases?: Record<string, Record<string, string>> }).phrases?.[lang] ?? {}) : {};
 
 export function t(s: string, p?: unknown[], raw = false): string {
-  let r = DICTS[lang]?.[s] || s;
+  let r = DICTS[lang]?.[s] || (lang !== "ja" ? DICTS.en?.[s] : undefined) || s;
   if (classic && !raw) r = PHRASES[s] ?? toClassic(r);
   return p ? r.replace(/\{(\d+)\}/g, (m, i) => (p[+i] ?? "") + "") : r;
 }

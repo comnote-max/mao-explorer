@@ -19,7 +19,7 @@ export default function Settings({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>⚙ {t("設定")}</h3>
+        <h3>{t("設定")}</h3>
         <label className="field">🌐 {t("言語")} / Language
           <select value={sel} onChange={(e) => setSel(e.target.value as Lang)}>
             {LANGS.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
@@ -36,6 +36,9 @@ export default function Settings({ onClose }: { onClose: () => void }) {
         <label className="check-row"><input type="checkbox" checked={cls} onChange={(e) => setCls(e.target.checked)} /> {t("クラシックモード（Git 経験者向け）", undefined, true)}</label>
         <p className="muted small-text">{t("下書き→branch、履歴保存→commit、同期→push / pull、反映→merge のように Git の用語そのままで表示します。オフにするとモダン（はじめての人向けのやさしい言葉）になります。", undefined, true)}</p>
         {changed && <p className="muted">{t("表示を切り替えると、画面を読み込み直します。")}</p>}
+        <p className="muted small-text" style={{ marginTop: 16, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+          {t("MAO Explorer は maociva のアプリです。")} © 2026 maociva. All rights reserved.
+        </p>
         <div className="actions">
           <button onClick={onClose}>{t("閉じる")}</button>
           <button className="primary" disabled={!changed} onClick={() => applySettings(sel, cls)}>{t("適用")}</button>

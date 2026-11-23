@@ -37,6 +37,8 @@ type Props = {
   extraStatus?: ReactNode;
   /** ファイルに変更が起きたとき（Git の状態更新用） */
   onMutate?: () => void;
+  /** ↻ を押したとき（Git の状態をクラウドに問い合わせ直すなど） */
+  onRefresh?: () => void;
   /** 選択が変わったとき（フルパス） */
   onSelect?: (paths: string[]) => void;
 };
@@ -293,7 +295,7 @@ export default function FileBrowser(p: Props) {
         <button className="icon" title={t("戻る")} disabled={!back.length && !p.canOuterBack} onClick={goBackNav}>←</button>
         <button className="icon" title={t("進む")} disabled={!fwd.length} onClick={() => { const f = fwd[0]; setFwd(fwd.slice(1)); setBack([...back, path]); go(f, false); }}>→</button>
         <button className="icon" title={t("上へ（Backspace）")} onClick={up} disabled={!!p.rootLimit && path === p.rootLimit && !p.outerUp}>↑</button>
-        <button className="icon" title={t("最新の情報に更新（F5）")} onClick={() => load()}>↻</button>
+        <button className="icon" title={t("最新の情報に更新（F5）")} onClick={() => { load(); p.onRefresh?.(); }}>↻</button>
         {addr === null ? (
           <div className="address" onClick={() => !p.rootLimit && setAddr(path)}>
             {crumbs.map((c, i) => (
