@@ -1,7 +1,7 @@
 # MAO Explorer（デスクトップ版）
 
 Gitを知らなくても、GitHubを普通のフォルダのように扱えるファイラー。Windows / macOS 向け。
-ライセンスは MIT OR Apache-2.0（Apache-2.0 の全文は公開前に `LICENSE-APACHE` として追加する）。
+ライセンスは MIT OR Apache-2.0（`LICENSE-MIT` / `LICENSE-APACHE`）。maociva のアプリです（https://maociva.com/）。
 
 - 仕様のたたき台：[docs/SPEC_v1.1_draft.md](docs/SPEC_v1.1_draft.md)
 - 実現性の評価：[docs/FEASIBILITY.md](docs/FEASIBILITY.md)
